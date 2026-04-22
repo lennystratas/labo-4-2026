@@ -124,22 +124,6 @@ def transferencia_C2(f, R, L, C, C2, R2):
 
 # %% DEFINO PARAMETROS
 
-R = 101
-DR = 1
-L = 10e-3
-DL = 1e-3
-C = 86.7e-9
-DC = 0.7e-9
-
-f0 = 1 / (np.sqrt(L * C) * 2 * np.pi)
-Df = R / (L * 2 * np.pi)
-Df0 = np.sqrt(
-    (0.5 * L**-1.5 * C**-0.5 * DL) ** 2 + (0.5 * L**-0.5 * C**-1.5 * DC) ** 2
-) / (2 * np.pi)
-DDf = np.sqrt((DR / L) ** 2 + (R / L**2 * DL) ** 2) / (2 * np.pi)
-print(f"f0 = {f0} +- {Df0} ")
-print(f"Df = {Df} +- {DDf} ")
-
 base_path = get_base_path()
 
 save_folder = base_path + "datos/"
@@ -148,140 +132,56 @@ image_folder = base_path + "graficos/"
 
 # %% ARCHIVOS
 def select_data(filtro):
-    if filtro == "grueso":
+    if filtro == "entrada":
+        df = pd.read_csv(
+            save_folder + "barrido_lockin_entrada.csv",
+            index_col=["Frecuencia"],
+        )
+    elif filtro == "cas":
         df1 = pd.read_csv(
-            save_folder + "barrido_osciloscopio_1.csv",
-            index_col=["Frecuencias", "Tiempo"],
+            save_folder + "barrido_lockin_cas_1.csv",
+            index_col=["Frecuencia"],
         )
         df2 = pd.read_csv(
-            save_folder + "barrido_osciloscopio_2.csv",
-            index_col=["Frecuencias", "Tiempo"],
-        )
+                    save_folder + "barrido_lockin_cas_2.csv",
+                    index_col=["Frecuencia"],
+                )
         df = pd.concat([df1, df2])
-    elif filtro == "fino":
-        df1 = pd.read_csv(
-            save_folder + "barrido_osciloscopio_fino_1.csv",
-            index_col=["Frecuencias", "Tiempo"],
-        )
-        df2 = pd.read_csv(
-            save_folder + "barrido_osciloscopio_fino_2.csv",
-            index_col=["Frecuencias", "Tiempo"],
-        )
-        df3 = pd.read_csv(
-            save_folder + "barrido_osciloscopio_fino_3v2.csv",
-            index_col=["Frecuencias", "Tiempo"],
-        )
-        df = pd.concat([df1, df2, df3])
-
-        # df3 = pd.read_csv(
-        #     save_folder + "data_RLC_3.csv", index_col=["Frecuencias", "Tiempo"]
-        # )
-        # df4 = pd.read_csv(
-        #     save_folder + "data_RLC_4.csv", index_col=["Frecuencias", "Tiempo"]
-        # )[: -4 * 2500]
-        # df5 = pd.read_csv(
-        #     save_folder + "data_RLC_5.csv", index_col=["Frecuencias", "Tiempo"]
-        # )
     else:
-        raise NameError(f"Filtro {filtro} no encontrado. Filtros disponibles: RLC")
+        raise NameError(f"Filtro {filtro} no encontrado. Filtros disponibles: entrada, cas")
     df = df.sort_index(level="Frecuencias")
     return df
 
-
-# %% PROCESAR DATA
-def procesar_data(df, plot=True):
-    frecs = df.index.get_level_values("Frecuencias").unique().values
-
-    # defino arrays para guardar resultados
-    f_med_1 = np.zeros_like(frecs)
-    f_med_2 = np.zeros_like(frecs)
-    A1 = np.zeros_like(frecs)
-    A2 = np.zeros_like(frecs)
-    phi_1 = np.zeros_like(frecs)
-    phi_2 = np.zeros_like(frecs)
-    R2_1 = np.zeros_like(frecs)
-    R2_2 = np.zeros_like(frecs)
-
-    # defino arrays para guardar incertezas
-    Df_med_1 = np.zeros_like(frecs)
-    Df_med_2 = np.zeros_like(frecs)
-    DA1 = np.zeros_like(frecs)
-    DA2 = np.zeros_like(frecs)
-    Dphi_1 = np.zeros_like(frecs)
-    Dphi_2 = np.zeros_like(frecs)
-
-    for i, f in enumerate(frecs):
-        print(f"procesando f = {f}")
-        t = df.xs(f, level="Frecuencias").index.values
-        V1 = df.xs(f, level="Frecuencias")["VoltajeCH1"].values
-        V2 = df.xs(f, level="Frecuencias")["VoltajeCH2"].values
-        # V1 -= np.mean(V1)
-        # V2 -= np.mean(V2)
-        A1_0 = (np.max(V1) - np.min(V1)) / 2
-        A2_0 = (np.max(V2) - np.min(V2)) / 2
-        phi1_0 = np.arcsin(V1[0] / A1_0) * 180 / np.pi
-        phi1_0 = phi1_0 if V1[0] < V1[5] else 180 - phi1_0
-        if np.abs(V2[0] / A2_0) > 1:
-            phi2_0 = 90 if V2[0] > 0 else 270
-        else:
-            phi2_0 = np.arcsin(V2[0] / A2_0) * 180 / np.pi
-            phi2_0 = phi2_0 if V2[0] < V2[5] else 180 - phi2_0
-        try:
-            popt1, pcov1 = curve_fit(seno, t, V1, p0=(A1_0, f, phi1_0))
-            popt2, pcov2 = curve_fit(seno, t, V2, p0=(A2_0, f, phi2_0))
-        except RuntimeError:
-            # plt.errorbar(t, V1, fmt=".", zorder=1)
-            plt.errorbar(t, V2, fmt=".", zorder=2)
-            plt.title(f"f = {f:.2e}")
-            plt.show()
-            raise RuntimeError(f"Ajuste falló para f = {f}")
-        A1[i], f_med_1[i], phi_1[i] = popt1
-        A2[i], f_med_2[i], phi_2[i] = popt2
-        if A1[i] < 0:
-            A1[i] = -A1[i]
-            phi_1[i] += 180
-        if A2[i] < 0:
-            A2[i] = -A2[i]
-            phi_2[i] += 180
-        DA1[i], Df_med_1[i], Dphi_1[i] = np.sqrt(np.diag(pcov1))
-        DA2[i], Df_med_2[i], Dphi_2[i] = np.sqrt(np.diag(pcov2))
-        R2_1[i] = r2_score(V1, seno(t, *popt1))
-        R2_2[i] = r2_score(V2, seno(t, *popt2))
-        if plot:
-            plt.errorbar(t, V1, fmt=".", zorder=1)
-            plt.plot(t, seno(t, *popt1), zorder=3)
-            plt.errorbar(t, V2, fmt=".", zorder=2)
-            plt.plot(t, seno(t, *popt2), zorder=4)
-            plt.title(f"f = {f:.2e}")
-            plt.show()
-    return (A1, DA1, A2, DA2, phi_1, Dphi_1, phi_2, Dphi_2, R2_1, R2_2, frecs)
-
-
 # %% BARRIDO
 barrido = "fino" # "grueso" o "fino"
-df = select_data(barrido)
-A1, DA1, A2, DA2, phi_1, Dphi_1, phi_2, Dphi_2, R2_1, R2_2, frecs = procesar_data(
-    df=df, plot=False
-)
+df_entrada = select_data("entrada")
+A1 = np.mean(df_entrada["Amplitud"].values)
+DA1 = np.std(df_entrada["Amplitud"].values)
+df_barrido = select_data("cas")
+frecs = df_barrido.index.values
+A2 = df_barrido["Amplitud"].values
+DA2 = df_barrido["Escala"].values/2**16
+
+phi_2 = df_barrido["Fase"].values
+Dphi_2 = np.sqrt((1/(1+np.cos(A2)**2) * DA2)**2+ (1/(1+np.cos(A2)**2) * DA2)**2)
+
 # %% AJUSTE MODELO SIMPLE
 T = A2 / A1
 DT = np.sqrt((DA1 * A2 / A1**2) ** 2 + (DA2 * A2 / A1) ** 2) * 20 / np.log(10)
 # At = 20 * np.log10(T)
 # DAt = np.sqrt((DA1 / A1) ** 2 + (DA2 / A2) ** 2) * 20 / np.log(10)
-phi = phi_2 - phi_1
-phi_d = phi % 360
-Dphi_d = np.sqrt((Dphi_1**2 + Dphi_2**2))
-phi_d[phi_d >= 180] -= 360
+phi = phi_2 % 360
+Dphi = Dphi_2
+phi[phi >= 180] -= 360
 
 rango = frecs <= 50.2e3
 popt1, pcov1 = curve_fit(
     transferencia_RLC, frecs[rango], T[rango], p0=(50.1e3, 200, 0.5)
 )
-popt2, pcov2 = curve_fit(fase_RLC, frecs[rango], phi_d[rango], p0=(50.1e3, 200, 10))
+popt2, pcov2 = curve_fit(fase_RLC, frecs[rango], phi[rango], p0=(50.1e3, 200, 10))
 # %% Modelo simple
 fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
 ax1, ax2 = axs
-plt.title("ajuste modelo RLC")
 if barrido == "grueso":
     ax1.set_xscale("log")
     ax1.set_xlim(0.8*1e3, 2.5e7*1.2)
@@ -299,7 +199,7 @@ ax1.legend(loc=3)
 if barrido == "grueso":
     ax2.set_xscale("log")
     ax2.set_xlim(0.8*1e3, 2.5e7*1.2)
-ax2.errorbar(frecs, phi_d, fmt=".", yerr=Dphi_d, color=w["rojo"], label="Datos")
+ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
 if barrido == "fino":
     ax2.plot(frecs, fase_RLC(frecs, *popt2), color=w["verde"], lw=2, label="Ajuste")
 ax2.xaxis.set_major_formatter(formatok)
@@ -323,7 +223,7 @@ ax1.legend(loc=3)
 # Fase
 if barrido == "grueso":
     ax2.set_xscale("log")
-ax2.errorbar(frecs[rango], phi_d[rango]-fase_RLC(frecs[rango], *popt2), fmt=".", yerr=Dphi_d, color=w["rojo"], label="Datos")
+ax2.errorbar(frecs[rango], phi[rango]-fase_RLC(frecs[rango], *popt2), fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
 ax2.xaxis.set_major_formatter(formatok)
 ax2.set_xlabel("Frecuencia [ kHz ]")
 ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
@@ -348,7 +248,7 @@ phi_aj = lambda f, C2, phi_0: fase_C2(f, Rs, Ls, Cs, C2, R2, phi_0)
 p0 = (1e-11,)
 p0_phi =(1e-11, popt2[2])
 popt3, pcov3 = curve_fit(T_aj, frecs, T, p0=p0, sigma=DT)
-popt4, pcov4 = curve_fit(phi_aj, frecs, phi_d, p0=p0_phi, sigma=Dphi_d)
+popt4, pcov4 = curve_fit(phi_aj, frecs, phi, p0=p0_phi, sigma=Dphi)
 # %% Graficos modelo complejo
 fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
 ax1, ax2 = axs
@@ -365,7 +265,7 @@ ax1.legend(loc=3)
 # Fase
 if barrido == "grueso":
     ax2.set_xscale("log")
-ax2.errorbar(frecs, phi_d, fmt=".", yerr=Dphi_d, color=w["rojo"], label="Datos")
+ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
 ax2.plot(frecs, phi_aj(frecs, *popt4), color=w["verde"], lw=2, label="Ajuste", zorder=10)
 ax2.xaxis.set_major_formatter(formatok)
 ax2.set_xlabel("Frecuencia [ kHz ]")
@@ -388,7 +288,7 @@ ax1.legend(loc=3)
 # Fase
 if barrido == "grueso":
     ax2.set_xscale("log")
-ax2.errorbar(frecs, phi_d-phi_aj(frecs, *popt4)/Dphi_d, fmt=".", yerr=Dphi_d, color=w["rojo"], label="Datos")
+ax2.errorbar(frecs, phi-phi_aj(frecs, *popt4)/Dphi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
 ax2.xaxis.set_major_formatter(formatok)
 ax2.set_xlabel("Frecuencia [ kHz ]")
 ax2.set_ylabel("Defasaje")
