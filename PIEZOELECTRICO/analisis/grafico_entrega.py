@@ -6,7 +6,6 @@ import pandas as pd
 from sklearn.metrics import r2_score
 from scipy.optimize import curve_fit
 import os
-# import wesanderson as ws
 
 
 plt.style.use("seaborn-v0_8")
@@ -24,6 +23,7 @@ plt.rcParams.update(
         "mathtext.default": "regular",
         "mathtext.fontset": "cm",
         "legend.frameon": True,
+        "legend.fontsize": 13,
     }
 )
 
@@ -42,15 +42,6 @@ def get_base_path():
             return path
     else:
         raise OSError("None of the paths are valid")
-
-
-# def p_value(x, y_obs, yerr, func, popt):
-#     from scipy.stats import chi2
-
-#     y_pred = func(x, *popt)
-#     chi_cuadrado = np.sum(((y_obs - y_pred) / yerr) ** 2)
-#     grados_libertad = len(x) - len(popt)
-#     return chi2.sf(chi_cuadrado, grados_libertad)
 
 
 def formato_kilo(valor, posicion):
@@ -179,222 +170,148 @@ Dphi_2 = np.sqrt(
 # %% AJUSTE MODELO SIMPLE
 T = A2 / A1
 DT = np.sqrt((DA1 * A2 / A1**2) ** 2 + (DA2 * A2 / A1) ** 2) * 20 / np.log(10)
-# At = 20 * np.log10(T)
-# DAt = np.sqrt((DA1 / A1) ** 2 + (DA2 / A2) ** 2) * 20 / np.log(10)
 phi = phi_2 % 360
 Dphi = Dphi_2
 phi[phi >= 180] -= 360
 
-rango = frecs <= 50.2e3
+limite_inf = frecs[0]
+limite_sup = 50.2e3
+rango = (frecs <= limite_sup) & (frecs >= limite_inf)
 popt1, pcov1 = curve_fit(
     transferencia_RLC, frecs[rango], T[rango], p0=(50.1e3, 200, 0.5)
 )
 popt2, pcov2 = curve_fit(fase_RLC, frecs[rango], phi[rango], p0=(50.1e3, 200, 10))
-# %% Modelo simple
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
-if barrido == "grueso":
-    ax1.set_xscale("log")
-    ax1.set_xlim(0.8 * 1e3, 2.5e7 * 1.2)
-
-
-# Transferencia
-ax1.set_yscale("log")
-ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos")
-if barrido == "fino":
-    ax1.plot(
-        frecs, transferencia_RLC(frecs, *popt1), color=w["verde"], label="Ajuste", lw=2
-    )
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
-
-# Fase
-if barrido == "grueso":
-    ax2.set_xscale("log")
-    ax2.set_xlim(0.8 * 1e3, 2.5e7 * 1.2)
-ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
-if barrido == "fino":
-    ax2.plot(frecs, fase_RLC(frecs, *popt2), color=w["verde"], lw=2, label="Ajuste")
-ax2.xaxis.set_major_formatter(formatok)
-ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
-ax2.legend(loc=3)
-fig.tight_layout()
-
-# Residuos
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
-if barrido == "grueso":
-    ax1.set_xscale("log")
-
-# Transferencia
-# ax1.set_yscale("log")
-ax1.errorbar(
-    frecs[rango],
-    T[rango] - transferencia_RLC(frecs[rango], *popt1),
-    fmt=".",
-    yerr=DT[rango],
-    color=w["rojo"],
-    label="Datos",
-)
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
-
-# Fase
-if barrido == "grueso":
-    ax2.set_xscale("log")
-ax2.errorbar(
-    frecs[rango],
-    phi[rango] - fase_RLC(frecs[rango], *popt2),
-    fmt=".",
-    yerr=Dphi,
-    color=w["rojo"],
-    label="Datos",
-)
-ax2.xaxis.set_major_formatter(formatok)
-ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
-ax2.legend(loc=3)
-fig.tight_layout()
-
-# %% Modelo complejo
+# %% AJUSTE MODELO COMPLEJO
 f0, Df, A = np.abs(
     popt1
 )  # Si A y Df son ambos negativos da lo mismo para el ajuste, tomamos positivos
 R2 = 9.8e3  # Ohm
 Rs = R2 * (1 - A) / A
-Ls = (Rs + R2) / (Df * 2 * np.pi)  # o debería ser sobre 2 pi? Esto funciona
+Ls = (Rs + R2) / (Df * 2 * np.pi)
 Cs = 1 / (4 * np.pi**2 * Ls * f0**2)
 print(Rs, Ls, Cs)
-# T_aj = lambda f, R, L, C, C2: transferencia_C2(f, R, L, C, C2, R2)
-# phi_aj  = lambda f, R, L, C, C2: fase_C2(f, R, L, C, C2, R2)
-# p0 = (Rs, Ls, Cs, 1e-11)
-# p0_phi = (Rs, Ls, Cs, 1e-11, popt2[2])
 T_aj = lambda f, C2: transferencia_C2(f, Rs, Ls, Cs, C2, R2)
 phi_aj = lambda f, C2, phi_0: fase_C2(f, Rs, Ls, Cs, C2, R2, phi_0)
 p0 = (2.3e-12,)
 p0_phi = (2.3e-12, popt2[2])
 popt3, pcov3 = curve_fit(T_aj, frecs, T, p0=p0, sigma=DT)
 popt4, pcov4 = curve_fit(phi_aj, frecs, phi, p0=p0_phi)
-# %% Graficos modelo complejo
+
+# %% GRAFICOS
 fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
 ax1, ax2 = axs
-if barrido == "grueso":
-    ax1.set_xscale("log")
 
 # Transferencia
 ax1.set_yscale("log")
-ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos")
-ax1.plot(frecs, T_aj(frecs, *popt3), color=w["verde"], label="Ajuste", lw=2, zorder=10)
+ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos", zorder=5)
+ax1.plot(
+    frecs,
+    transferencia_RLC(frecs, *popt1),
+    color=w["verde"],
+    label="Ajuste sin $C_2$",
+    lw=2,
+    zorder=9,
+)
+ax1.plot(
+    frecs,
+    T_aj(frecs, *popt3),
+    color=w["amarillo"],
+    label="Ajuste con $C_2$",
+    lw=2,
+    zorder=10,
+)
 ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
+ax1.vlines(
+    [limite_inf, limite_sup],
+    np.min(T),
+    np.max(T),
+    linestyles="dashed",
+    label="Límite ajuste sin $C_2$",
+    colors=w["verde"],
+)
+# ax1.legend(loc=3)
 
 # Fase
-if barrido == "grueso":
-    ax2.set_xscale("log")
-ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
+ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos", zorder=5)
 ax2.plot(
-    frecs, phi_aj(frecs, *popt4), color=w["verde"], lw=2, label="Ajuste", zorder=10
+    frecs,
+    fase_RLC(frecs, *popt2),
+    color=w["verde"],
+    lw=2,
+    label="Ajuste sin $C_2$",
+    zorder=9,
+)
+ax2.plot(
+    frecs,
+    phi_aj(frecs, *popt4),
+    color=w["amarillo"],
+    lw=2,
+    label="Ajuste con $C_2$",
+    zorder=10,
 )
 ax2.xaxis.set_major_formatter(formatok)
 ax2.set_xlabel("Frecuencia [ kHz ]")
 ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
-ax2.legend(loc=3)
+ax2.vlines(
+    [limite_inf, limite_sup],
+    np.min(phi),
+    np.max(phi),
+    linestyles="dashed",
+    label="Límite ajuste sin $C_2$",
+    colors=w["verde"],
+)
+# ax2.legend(loc=(0.3, 0.25))
+ax2.legend(loc=(0.28, 0.62))
 fig.tight_layout()
 
-# Residuos
+
+# %% RESIDUOS
 fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
 ax1, ax2 = axs
-if barrido == "grueso":
-    ax1.set_xscale("log")
 
 # Transferencia
 # ax1.set_yscale("log")
 ax1.errorbar(
+    frecs[rango],
+    (T[rango] - transferencia_RLC(frecs[rango], *popt1)),
+    fmt=".",
+    yerr=DT[rango],
+    color=w["verde"],
+    label="Residuos sin $C_2$",
+    zorder=10,
+)
+ax1.errorbar(
     frecs,
-    (T - T_aj(frecs, *popt3)) / DT,
+    (T - T_aj(frecs, *popt3)),
     fmt=".",
     yerr=DT,
-    color=w["rojo"],
-    label="Datos",
+    color=w["amarillo"],
+    label="Residuos con $C_2$",
 )
 ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
+# ax1.legend(loc=4)
 
 # Fase
-if barrido == "grueso":
-    ax2.set_xscale("log")
+ax2.errorbar(
+    frecs[rango],
+    phi[rango] - fase_RLC(frecs[rango], *popt2),
+    fmt=".",
+    yerr=Dphi[rango],
+    color=w["verde"],
+    label="Residuos sin $C_2$",
+    zorder=10,
+)
 ax2.errorbar(
     frecs,
-    (phi - phi_aj(frecs, *popt4)) / Dphi,
+    (phi - phi_aj(frecs, *popt4)),
     fmt=".",
     yerr=Dphi,
-    color=w["rojo"],
-    label="Datos",
+    color=w["amarillo"],
+    label="Residuos con $C_2$",
 )
-ax2.xaxis.set_major_formatter(formatok)
-ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje")
-ax2.legend(loc=3)
-fig.tight_layout()
-
-# %% Modelo complejo logaritmico
-T_aj = lambda f, R, L, C, C2: transferencia_C2(f, R, L, C, C2, R2)
-T_aj_log = lambda f, R, L, C, C2: np.log10(transferencia_C2(f, R, L, C, C2, R2))
-phi_aj = lambda f, R, L, C, C2, phi_0: fase_C2(f, R, L, C, C2, R2, phi_0)
-p0 = (Rs, Ls, Cs, 2.3e-12)
-p0_phi = (Rs, Ls, Cs, 2.3e-12, popt2[2])
-popt5, pcov5 = curve_fit(T_aj_log, frecs, np.log10(T), p0=p0)
-popt6, pcov6 = curve_fit(phi_aj, frecs, phi, p0=p0_phi, sigma=Dphi)
-# %% Graficos modelo complejo logaritmico
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
-if barrido == "grueso":
-    ax1.set_xscale("log")
-
-# Transferencia
-ax1.set_yscale("log")
-ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos")
-ax1.plot(frecs, T_aj(frecs, *popt5), color=w["verde"], label="Ajuste", lw=2, zorder=5)
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
-
-# Fase
-if barrido == "grueso":
-    ax2.set_xscale("log")
-ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
-ax2.plot(frecs, phi_aj(frecs, *popt6), color=w["verde"], lw=2, label="Ajuste")
 ax2.xaxis.set_major_formatter(formatok)
 ax2.set_xlabel("Frecuencia [ kHz ]")
 ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
-ax2.legend(loc=3)
-fig.tight_layout()
-
-# Residuos
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
-if barrido == "grueso":
-    ax1.set_xscale("log")
-
-# Transferencia
-# ax1.set_yscale("log")
-ax1.errorbar(
-    frecs,
-    (T - T_aj(frecs, *popt5)) / DT,
-    fmt=".",
-    yerr=DT,
-    color=w["rojo"],
-    label="Datos",
-)
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
-
-# Fase
-# if barrido == "grueso":
-#     ax2.set_xscale("log")
-# ax2.errorbar(frecs, phi_d-phi_aj(frecs, *popt6), fmt=".", yerr=Dphi_d, color=w["rojo"], label="Datos")
-# ax2.xaxis.set_major_formatter(formatok)
-# ax2.set_xlabel("Frecuencia [ kHz ]")
-# ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
 # ax2.legend(loc=3)
-# fig.tight_layout()
+ax2.legend(loc=(0.32, 0.85))
+fig.tight_layout()
