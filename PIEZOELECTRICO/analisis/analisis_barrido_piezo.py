@@ -32,7 +32,7 @@ w = {"amarillo": "#F3AA0C", "verde": "#055E49", "violeta": '#35274A', "rojo": '#
 
 def get_base_path():
     paths = [
-        "C:/Users/publico/Documents/l4-g6-2026-1C/piezo/",  # compu labo
+        "C:/Users/publico/Documents/l4-g6-2026-1C/labo-4-2026/PIEZOELECTRICO/",  # compu labo
         "C:/Users/olive/Documents/labo-4-2026/PIEZOELECTRICO/",  # Oli
         "C:/Users/lenny/OneDrive/Documents/FISICA/LABO 4/labo-4-2026/PIEZOELECTRICO/" #Lenny        
     ]
@@ -172,6 +172,16 @@ def select_data(filtro):
             index_col=["Frecuencias", "Tiempo"],
         )
         df = pd.concat([df1, df2, df3])
+    elif filtro == "m3":
+        df1 = pd.read_csv(
+            save_folder + "barrido_osciloscopio_m3_1.csv",
+            index_col=["Frecuencias", "Tiempo"],
+        )
+        df2 = pd.read_csv(
+            save_folder + "barrido_osciloscopio_m3_2.csv",
+            index_col=["Frecuencias", "Tiempo"],
+        )
+        df = pd.concat([df1, df2])
 
         # df3 = pd.read_csv(
         #     save_folder + "data_RLC_3.csv", index_col=["Frecuencias", "Tiempo"]
@@ -258,7 +268,7 @@ def procesar_data(df, plot=True):
 
 
 # %% BARRIDO
-barrido = "fino" # "grueso" o "fino"
+barrido = "m3" # "grueso" o "fino" o "m3"
 df = select_data(barrido)
 A1, DA1, A2, DA2, phi_1, Dphi_1, phi_2, Dphi_2, R2_1, R2_2, frecs = procesar_data(
     df=df, plot=False
@@ -290,7 +300,7 @@ if barrido == "grueso":
 # Transferencia
 ax1.set_yscale("log")
 ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos")
-if barrido =="fino":
+if barrido !="grueso":
     ax1.plot(frecs, transferencia_RLC(frecs, *popt1), color=w["verde"], label="Ajuste", lw=2)
 ax1.set_ylabel("Transferencia")
 ax1.legend(loc=3)

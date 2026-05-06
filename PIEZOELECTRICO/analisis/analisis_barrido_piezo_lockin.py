@@ -247,7 +247,7 @@ ax2.errorbar(
     frecs[rango],
     phi[rango] - fase_RLC(frecs[rango], *popt2),
     fmt=".",
-    yerr=Dphi,
+    yerr=Dphi[rango],
     color=w["rojo"],
     label="Datos",
 )
@@ -398,3 +398,5 @@ ax1.legend(loc=3)
 # ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
 # ax2.legend(loc=3)
 # fig.tight_layout()
+
+# %%

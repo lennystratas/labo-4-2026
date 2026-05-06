@@ -265,10 +265,11 @@ class TDS1002B:
     	#yoff offset vertical
         xze, xin, yze, ymu, yoff = self._osci.query_ascii_values('WFMPRE:XZE?;XIN?;YZE?;YMU?;YOFF?;', 
                                                                  separator=';') 
-        data = (self._osci.query_binary_values('CURV?', datatype='B', 
-                                               container=np.array) - yoff) * ymu + yze        
+        bits = self._osci.query_binary_values('CURV?', datatype='B', container=np.array)
+        scale_use = bits/255
+        data = (bits - yoff) * ymu + yze        
         tiempo = xze + np.arange(len(data)) * xin
-        return tiempo, data, ymu
+        return tiempo, data, ymu, np.max(scale_use) - np.min(scale_use)
     
     def get_range(self, channel):
         xze, xin, yze, ymu, yoff = self._osci.query_ascii_values('WFMPRE:XZE?;XIN?;YZE?;YMU?;YOFF?;', 
