@@ -1,5 +1,6 @@
 # %% AJUSTES
 from matplotlib import ticker
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -49,7 +50,15 @@ def formato_kilo(valor, posicion):
     return f"{valor / 1000:.2f}"
 
 
+def formato_exp(valor, posicion):
+    if valor == 0:
+        return "0"
+    else:
+        return f"{valor * 1000:.0f}e-3"
+
+
 formatok = ticker.FuncFormatter(formato_kilo)
+formato_1e = ticker.FuncFormatter(formato_exp)
 
 
 # %% DEFINO MODELOS
@@ -124,7 +133,7 @@ def transferencia_C2(f, R, L, C, C2, R2):
 base_path = get_base_path()
 
 save_folder = base_path + "datos/"
-image_folder = base_path + "graficos/"
+image_folder = base_path + "figuras/"
 
 
 # %% ARCHIVOS
@@ -174,8 +183,8 @@ phi = phi_2 % 360
 Dphi = Dphi_2
 phi[phi >= 180] -= 360
 
-limite_inf = frecs[0]
-limite_sup = 50.2e3
+limite_inf = 50.05e3
+limite_sup = 50.15e3
 rango = (frecs <= limite_sup) & (frecs >= limite_inf)
 popt1, pcov1 = curve_fit(
     transferencia_RLC, frecs[rango], T[rango], p0=(50.1e3, 200, 0.5)
@@ -203,52 +212,64 @@ ax1, ax2 = axs
 
 # Transferencia
 ax1.set_yscale("log")
-ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos", zorder=5)
+ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["verde"], label="Datos", zorder=5)
 ax1.plot(
     frecs,
     transferencia_RLC(frecs, *popt1),
-    color=w["verde"],
-    label="Ajuste sin $C_2$",
-    lw=2,
+    color=w["rojo"],
+    label="Ajuste RLC",
+    lw=1.5,
     zorder=9,
 )
-ax1.plot(
-    frecs,
-    T_aj(frecs, *popt3),
-    color=w["amarillo"],
-    label="Ajuste con $C_2$",
-    lw=2,
-    zorder=10,
-)
+# ax1.plot(
+
+#     frecs,
+#     T_aj(frecs, *popt3),
+#     color=w["amarillo"],
+#     label="Ajuste con $C_2$",
+#     lw=2,
+#     zorder=10,
+# )
 ax1.set_ylabel("Transferencia")
 ax1.vlines(
     [limite_inf, limite_sup],
     np.min(T),
     np.max(T),
     linestyles="dashed",
-    label="Límite ajuste sin $C_2$",
-    colors=w["verde"],
+    label="Límite ajuste",
+    colors=w["violeta"],
+    alpha=0.65,
 )
-# ax1.legend(loc=3)
+ax1.vlines(
+    popt1[0],
+    np.min(T),
+    np.max(T),
+    linestyles="dashed",
+    label="$f_0$ ajuste",
+    colors=w["amarillo"],
+    alpha=1,
+)
+
+# ax1.legend(loc=1)
 
 # Fase
-ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos", zorder=5)
+ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["verde"], label="Datos", zorder=5)
 ax2.plot(
     frecs,
     fase_RLC(frecs, *popt2),
-    color=w["verde"],
-    lw=2,
-    label="Ajuste sin $C_2$",
+    color=w["rojo"],
+    lw=1.5,
+    label="Ajuste RLC",
     zorder=9,
 )
-ax2.plot(
-    frecs,
-    phi_aj(frecs, *popt4),
-    color=w["amarillo"],
-    lw=2,
-    label="Ajuste con $C_2$",
-    zorder=10,
-)
+# ax2.plot(
+#     frecs,
+#     phi_aj(frecs, *popt4),
+#     color=w["amarillo"],
+#     lw=2,
+#     label="Ajuste con $C_2$",
+#     zorder=10,
+# )
 ax2.xaxis.set_major_formatter(formatok)
 ax2.set_xlabel("Frecuencia [ kHz ]")
 ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
@@ -257,16 +278,33 @@ ax2.vlines(
     np.min(phi),
     np.max(phi),
     linestyles="dashed",
-    label="Límite ajuste sin $C_2$",
-    colors=w["verde"],
+    label="Límite ajuste",
+    colors=w["violeta"],
+    alpha=0.65,
 )
-# ax2.legend(loc=(0.3, 0.25))
-ax2.legend(loc=(0.28, 0.62))
+ax2.vlines(
+    popt2[0],
+    np.min(phi),
+    np.max(phi),
+    linestyles="dashed",
+    # label=f"$f_0 = ({popt2[0]/1000:.1f} \\pm {np.sqrt(np.diag(pcov2))[0]/1000:.f}$) Hz ",
+    label=f"$f_0$ ajuste",
+    colors=w["amarillo"],
+    alpha=1,
+)
+# ax2.legend(loc=(0.33, 0.3))
+ax2.legend(loc="best")
 fig.tight_layout()
-
+fig.savefig(image_folder + "grafico_entrega.pdf", bbox_inches="tight")
 
 # %% RESIDUOS
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
+fig, axs = plt.subplots(
+    2,
+    1,
+    sharex=True,
+    gridspec_kw={"hspace": 0.05},
+    figsize=(6.4, 4.8 * 496 / 396 * 0.93),
+)
 ax1, ax2 = axs
 
 # Transferencia
@@ -277,19 +315,22 @@ ax1.errorbar(
     fmt=".",
     yerr=DT[rango],
     color=w["verde"],
-    label="Residuos sin $C_2$",
+    label="Residuos",
+    # label="Residuos sin $C_2$",
     zorder=10,
 )
-ax1.errorbar(
-    frecs,
-    (T - T_aj(frecs, *popt3)),
-    fmt=".",
-    yerr=DT,
-    color=w["amarillo"],
-    label="Residuos con $C_2$",
-)
-ax1.set_ylabel("Transferencia")
-# ax1.legend(loc=4)
+# ax1.errorbar(
+#     frecs,
+#     (T - T_aj(frecs, *popt3)),
+#     fmt=".",
+#     yerr=DT,
+#     color=w["amarillo"],
+#     label="Residuos con $C_2$",
+# )
+# ax1.set_ylabel("Transferencia")
+ax1.legend(loc=1)
+ax1.hlines(0, frecs[rango][0], frecs[rango][-1], lw=1.5, color=w["rojo"])
+ax1.yaxis.set_major_formatter(formato_1e)
 
 # Fase
 ax2.errorbar(
@@ -301,17 +342,85 @@ ax2.errorbar(
     label="Residuos sin $C_2$",
     zorder=10,
 )
-ax2.errorbar(
-    frecs,
-    (phi - phi_aj(frecs, *popt4)),
-    fmt=".",
-    yerr=Dphi,
-    color=w["amarillo"],
-    label="Residuos con $C_2$",
-)
+# ax2.errorbar(
+#     frecs,
+#     (phi - phi_aj(frecs, *popt4)),
+#     fmt=".",
+#     yerr=Dphi,
+#     color=w["amarillo"],
+#     label="Residuos con $C_2$",
+# )
 ax2.xaxis.set_major_formatter(formatok)
 ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
+# ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
+ax2.hlines(0, frecs[rango][0], frecs[rango][-1], lw=1.5, color=w["rojo"])
 # ax2.legend(loc=3)
-ax2.legend(loc=(0.32, 0.85))
 fig.tight_layout()
+fig.savefig(image_folder + "residuos_entrega.pdf", bbox_inches="tight")
+
+# INSETS
+
+# # --- Top inset (Transferencia) ---
+# axins1 = inset_axes(ax1, width="35%", height="35%", loc="lower right")
+
+# # same data as ax1
+# axins1.errorbar(
+#     frecs[rango],
+#     (T[rango] - transferencia_RLC(frecs[rango], *popt1)),
+#     fmt=".",
+#     yerr=DT[rango],
+#     color=w["verde"],
+# )
+# axins1.errorbar(frecs, (T - T_aj(frecs, *popt3)), fmt=".", yerr=DT, color=w["amarillo"])
+# axins1.xaxis.set_major_formatter(formatok)
+
+# # zoom region around 50250
+# x1_top, x2_top = 50200, 50300
+# axins1.set_xlim(x1_top, x2_top)
+
+
+# # auto y-limits based on that window
+# mask_top = (frecs >= x1_top) & (frecs <= x2_top)
+# ydata_top = (T - T_aj(frecs, *popt3))[mask_top]
+# axins1.set_ylim(ydata_top.min(), ydata_top.max())
+
+# mark_inset(ax1, axins1, loc1=2, loc2=4, fc="none", ec="0.5")
+
+
+# # --- Bottom inset (Fase) ---
+# axins2 = inset_axes(
+#     ax2,
+#     width="20%",
+#     height="20%",
+#     loc="upper left",
+#     bbox_to_anchor=(0.12, -0.05, 1, 1),
+#     bbox_transform=ax2.transAxes,
+# )  # box in normalized coords
+
+
+# axins2.errorbar(
+#     frecs[rango],
+#     phi[rango] - fase_RLC(frecs[rango], *popt2),
+#     fmt=".",
+#     yerr=Dphi[rango],
+#     color=w["verde"],
+# )
+# axins2.errorbar(
+#     frecs, (phi - phi_aj(frecs, *popt4)), fmt=".", yerr=Dphi, color=w["amarillo"]
+# )
+
+# # zoom region around 50100
+# x1_bot, x2_bot = 50050, 50150
+# axins2.set_xlim(x1_bot, x2_bot)
+# axins2.set_xticks([50050, 50150])
+
+# axins2.set_yticks([-0.25, 0.25])
+
+# axins2.xaxis.set_major_formatter(formatok)
+
+
+# axins2.set_ylim(-2, 2)
+
+# mark_inset(ax2, axins2, loc1=2, loc2=4, fc="none", ec="0.5", zorder = 20)
+
+# %%
