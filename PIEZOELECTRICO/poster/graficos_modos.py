@@ -24,6 +24,7 @@ plt.rcParams.update(
         "mathtext.default": "regular",
         "mathtext.fontset": "cm",
         "legend.frameon": True,
+        "legend.fontsize": 15,
     }
 )
 
@@ -42,15 +43,6 @@ def get_base_path():
             return path
     else:
         raise OSError("None of the paths are valid")
-
-
-# def p_value(x, y_obs, yerr, func, popt):
-#     from scipy.stats import chi2
-
-#     y_pred = func(x, *popt)
-#     chi_cuadrado = np.sum(((y_obs - y_pred) / yerr) ** 2)
-#     grados_libertad = len(x) - len(popt)
-#     return chi2.sf(chi_cuadrado, grados_libertad)
 
 
 def formato_kilo(valor, posicion):
@@ -132,7 +124,7 @@ def transferencia_C2(f, R, L, C, C2, R2):
 base_path = get_base_path()
 
 save_folder = base_path + "datos/"
-image_folder = base_path + "graficos/"
+image_folder = base_path + "poster/figuras/"
 
 
 # %% ARCHIVOS
@@ -210,7 +202,7 @@ def select_data(filtro):
 
 
 # %% PROCESAR DATA
-def procesar_data(df, plot=True):
+def procesar_data(df, plot=False, print_frecs=True):
     frecs = df.index.get_level_values("Frecuencias").unique().values
 
     # defino arrays para guardar resultados
@@ -232,7 +224,8 @@ def procesar_data(df, plot=True):
     Dphi_2 = np.zeros_like(frecs)
 
     for i, f in enumerate(frecs):
-        print(f"procesando f = {f}")
+        if print_frecs:
+            print(f"procesando f = {f}")
         t = df.xs(f, level="Frecuencias").index.values
         V1 = df.xs(f, level="Frecuencias")["VoltajeCH1"].values
         V2 = df.xs(f, level="Frecuencias")["VoltajeCH2"].values
@@ -279,195 +272,102 @@ def procesar_data(df, plot=True):
 
 
 # %% BARRIDO
-barrido = "m5"  # "m1" o "m3" o "m5" o "m7"
-df = select_data(barrido)
-A1, DA1, A2, DA2, phi_1, Dphi_1, phi_2, Dphi_2, R2_1, R2_2, frecs = procesar_data(
-    df=df, plot=False
-)
-# %% AJUSTE MODELO SIMPLE
-T = A2 / A1
-print(np.max(T))
-DT = np.sqrt((DA1 * A2 / A1**2) ** 2 + (DA2 * A2 / A1) ** 2) * 20 / np.log(10)
-# At = 20 * np.log10(T)
-# DAt = np.sqrt((DA1 / A1) ** 2 + (DA2 / A2) ** 2) * 20 / np.log(10)
-phi = phi_2 - phi_1
-phi = phi % 360
-Dphi_d = np.sqrt((Dphi_1**2 + Dphi_2**2))
-phi[phi >= 180] -= 360
+def generar_grafico(barrido, guardar=False):
+    df = select_data(barrido)
+    A1, DA1, A2, DA2, phi_1, Dphi_1, phi_2, Dphi_2, R2_1, R2_2, frecs = procesar_data(
+        df=df, plot=False, print_frecs=False
+    )
+    # AJUSTE MODELO SIMPLE
+    T = A2 / A1
+    DT = np.sqrt((DA1 * A2 / A1**2) ** 2 + (DA2 * A2 / A1) ** 2) * 20 / np.log(10)
+    rangos = {
+        "m1": (50.05e3, 50.15e3),
+        "m3": (150.145e3, 150.175e3),
+        "m5": (248.27e3, 248.30e3),
+        "m7": (349.1e3, 349.19e3),
+    }
+    lim_inf, lim_sup = rangos[barrido]
+    rango = (frecs >= lim_inf) & (frecs <= lim_sup)
+    popt1, pcov1 = curve_fit(
+        transferencia_RLC,
+        frecs[rango],
+        T[rango],
+        p0=((lim_sup + lim_inf) / 2, 200, 0.5),
+    )
+    popt1 = np.abs(popt1)
+    # AJUSTE MODELO COMPLEJO
+    f0, Df, A = np.abs(
+        popt1
+    )  # Si A y Df son ambos negativos da lo mismo para el ajuste, tomamos positivos
+    print(f0)
+    R2 = 9.8e3  # Ohm
+    Rs = R2 * (1 - A) / A
+    Ls = (Rs + R2) / (Df * 2 * np.pi)
+    Cs = 1 / (4 * np.pi**2 * Ls * f0**2)
+    T_aj = lambda f, C2: transferencia_C2(f, Rs, Ls, Cs, C2, R2)
+    phi_aj = lambda f, C2, phi_0: fase_C2(f, Rs, Ls, Cs, C2, R2, phi_0)
+    p0 = (2.3e-12,)
+    popt2, pcov2 = curve_fit(T_aj, frecs, T, p0=p0, sigma=DT)
+    # Ajuste modelo complejo logaritmico
+    T_aj_c = lambda f, R, L, C, C2: transferencia_C2(f, R, L, C, C2, R2)
+    T_aj_log = lambda f, R, L, C, C2: np.log10(transferencia_C2(f, R, L, C, C2, R2))
+    p0 = (Rs, Ls, Cs, 2.3e-12)
+    popt3, pcov3 = curve_fit(T_aj_log, frecs, np.log10(T), p0=p0)
+    #  GRAFICOS
+    fig, ax = plt.subplots(1, 1, figsize=(6, 3))
 
-# %% Modelo simple
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
-
-# Transferencia
-ax1.set_yscale("log")
-ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos")
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
-
-# Fase
-ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi_d, color=w["rojo"], label="Datos")
-ax2.xaxis.set_major_formatter(formatok)
-ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
-ax2.legend(loc=3)
-fig.tight_layout()
-
-# %% AJUSTE MODELO SIMPLE
-T = A2 / A1
-DT = np.sqrt((DA1 * A2 / A1**2) ** 2 + (DA2 * A2 / A1) ** 2) * 20 / np.log(10)
-phi = phi_2 - phi_1
-phi = phi % 360
-Dphi = np.sqrt((Dphi_1**2 + Dphi_2**2))
-Dphi = Dphi_2
-phi[phi >= 180] -= 360
-rangos = {
-    "m1": (50.05e3, 50.15e3),
-    "m3": (150.125e3, 150.175e3),
-    "m5": (248.25e3, 248.30e3),
-    "m7": (349.10e3, 349.19e3),
-}
-lim_inf, lim_sup = rangos["m7"]
-rango = (frecs >= lim_inf) & (frecs <= lim_sup)
-popt1, pcov1 = curve_fit(
-    transferencia_RLC, frecs[rango], T[rango], p0=(50.1e3, 200, 0.5)
-)
-popt2, pcov2 = curve_fit(fase_RLC, frecs[rango], phi[rango], p0=(50.1e3, 200, 10))
-# %% Modelo simple
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
-
-# Transferencia
-ax1.set_yscale("log")
-ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos")
-ax1.plot(
-    frecs, transferencia_RLC(frecs, *popt1), color=w["verde"], label="Ajuste", lw=2
-)
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
-
-# Fase
-
-ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
-ax2.plot(frecs, fase_RLC(frecs, *popt2), color=w["verde"], lw=2, label="Ajuste")
-ax2.xaxis.set_major_formatter(formatok)
-ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
-ax2.legend(loc=3)
-fig.tight_layout()
-
-# Residuos
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
+    # Transferencia
+    ax.set_yscale("log")
+    ax.errorbar(frecs, T, fmt=".", yerr=DT, color=w["verde"], label="Datos", zorder=5)
+    # ax.plot(
+    #     frecs,
+    #     transferencia_RLC(frecs, *popt1),
+    #     color=w["rojo"],
+    #     label="Ajuste RLC",
+    #     lw=1.5,
+    #     zorder=9,
+    # )
+    ax.plot(
+        frecs,
+        T_aj_c(frecs, *popt3),
+        color=w["amarillo"],
+        label="Ajuste con $C_2$",
+        lw=2,
+        zorder=10,
+    )
+    ax.set_ylabel("Transferencia")
+    # ax.vlines(
+    #     [lim_inf, lim_sup],
+    #     np.min(T),
+    #     np.max(T),
+    #     linestyles="dashed",
+    #     label="Límite ajuste",
+    #     colors=w["violeta"],
+    #     alpha=0.65,
+    # )
+    # ax.vlines(
+    #     popt1[0],
+    #     np.min(T),
+    #     np.max(T),
+    #     linestyles="dashed",
+    #     label=f"$f_0 = {popt1[0] / 1000:.2f}$ kHz",
+    #     colors=w["amarillo"],
+    #     alpha=1,
+    # )
+    if barrido == "m3":
+        ax.set_xlim(149.95e3, 150.35e3)
+    ax.xaxis.set_major_formatter(formatok)
+    legend_locs = {"m3": 3, "m5": 1, "m7": 1}
+    ax.legend(loc=legend_locs[barrido])
+    if guardar:
+        fig.savefig(
+            image_folder + f"grafico_barrido_{barrido}.svg", bbox_inches="tight"
+        )
 
 
-# Transferencia
-# ax1.set_yscale("log")
-ax1.errorbar(
-    frecs[rango],
-    T[rango] - transferencia_RLC(frecs[rango], *popt1),
-    fmt=".",
-    yerr=DT[rango],
-    color=w["rojo"],
-    label="Datos",
-)
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
+# %%
+barridos = ["m3", "m5"]  # "m1" o "m3" o "m5" o "m7"
+for barrido in barridos:
+    generar_grafico(barrido, guardar=True)
 
-# Fase
-if barrido == "grueso":
-    ax2.set_xscale("log")
-ax2.errorbar(
-    frecs[rango],
-    phi[rango] - fase_RLC(frecs[rango], *popt2),
-    fmt=".",
-    yerr=Dphi[rango],
-    color=w["rojo"],
-    label="Datos",
-)
-ax2.xaxis.set_major_formatter(formatok)
-ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
-ax2.legend(loc=3)
-fig.tight_layout()
-
-# %% Modelo complejo
-f0, Df, A = np.abs(
-    popt1
-)  # Si A y Df son ambos negativos da lo mismo para el ajuste, tomamos positivos
-R2 = 9.8e3  # Ohm
-Rs = R2 * (1 - A) / A
-Ls = (Rs + R2) / (Df * 2 * np.pi)  # o debería ser sobre 2 pi? Esto funciona
-Cs = 1 / (4 * np.pi**2 * Ls * f0**2)
-print(Rs, Ls, Cs)
-# T_aj = lambda f, R, L, C, C2: transferencia_C2(f, R, L, C, C2, R2)
-# phi_aj  = lambda f, R, L, C, C2: fase_C2(f, R, L, C, C2, R2)
-# p0 = (Rs, Ls, Cs, 1e-11)
-# p0_phi = (Rs, Ls, Cs, 1e-11, popt2[2])
-T_aj = lambda f, C2: transferencia_C2(f, Rs, Ls, Cs, C2, R2)
-phi_aj = lambda f, C2, phi_0: fase_C2(f, Rs, Ls, Cs, C2, R2, phi_0)
-p0 = (2.3e-12,)
-p0_phi = (2.3e-12, popt2[2])
-popt3, pcov3 = curve_fit(T_aj, frecs, T, p0=p0, sigma=DT)
-popt4, pcov4 = curve_fit(phi_aj, frecs, phi, p0=p0_phi)
-# %% Graficos modelo complejo
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
-if barrido == "grueso":
-    ax1.set_xscale("log")
-
-# Transferencia
-ax1.set_yscale("log")
-ax1.errorbar(frecs, T, fmt=".", yerr=DT, color=w["rojo"], label="Datos")
-ax1.plot(frecs, T_aj(frecs, *popt3), color=w["verde"], label="Ajuste", lw=2, zorder=10)
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
-
-# Fase
-if barrido == "grueso":
-    ax2.set_xscale("log")
-ax2.errorbar(frecs, phi, fmt=".", yerr=Dphi, color=w["rojo"], label="Datos")
-ax2.plot(
-    frecs, phi_aj(frecs, *popt4), color=w["verde"], lw=2, label="Ajuste", zorder=10
-)
-ax2.xaxis.set_major_formatter(formatok)
-ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje [ $^\\circ$ ]")
-ax2.legend(loc=3)
-fig.tight_layout()
-
-# Residuos
-fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
-ax1, ax2 = axs
-if barrido == "grueso":
-    ax1.set_xscale("log")
-
-# Transferencia
-# ax1.set_yscale("log")
-ax1.errorbar(
-    frecs,
-    (T - T_aj(frecs, *popt3)) / DT,
-    fmt=".",
-    yerr=DT,
-    color=w["rojo"],
-    label="Datos",
-)
-ax1.set_ylabel("Transferencia")
-ax1.legend(loc=3)
-
-# Fase
-if barrido == "grueso":
-    ax2.set_xscale("log")
-ax2.errorbar(
-    frecs,
-    (phi - phi_aj(frecs, *popt4)) / Dphi,
-    fmt=".",
-    yerr=Dphi,
-    color=w["rojo"],
-    label="Datos",
-)
-ax2.xaxis.set_major_formatter(formatok)
-ax2.set_xlabel("Frecuencia [ kHz ]")
-ax2.set_ylabel("Defasaje")
-ax2.legend(loc=3)
-fig.tight_layout()
+# %%
