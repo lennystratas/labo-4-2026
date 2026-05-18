@@ -11,7 +11,7 @@ import os
 
 plt.style.use("seaborn-v0_8")
 
-fontsize = 15
+fontsize = 14
 plt.rcParams.update(
     {
         "font.family": "serif",
@@ -24,7 +24,7 @@ plt.rcParams.update(
         "mathtext.default": "regular",
         "mathtext.fontset": "cm",
         "legend.frameon": True,
-        "legend.fontsize": 15,
+        # "legend.fontsize": 15,
     }
 )
 
@@ -272,7 +272,7 @@ def procesar_data(df, plot=False, print_frecs=True):
 
 
 # %% BARRIDO
-def generar_grafico(barrido, guardar=False):
+def generar_grafico(barrido, ax, guardar=False):
     df = select_data(barrido)
     A1, DA1, A2, DA2, phi_1, Dphi_1, phi_2, Dphi_2, R2_1, R2_2, frecs = procesar_data(
         df=df, plot=False, print_frecs=False
@@ -314,7 +314,6 @@ def generar_grafico(barrido, guardar=False):
     p0 = (Rs, Ls, Cs, 2.3e-12)
     popt3, pcov3 = curve_fit(T_aj_log, frecs, np.log10(T), p0=p0)
     #  GRAFICOS
-    fig, ax = plt.subplots(1, 1, figsize=(6, 3))
 
     # Transferencia
     ax.set_yscale("log")
@@ -335,7 +334,7 @@ def generar_grafico(barrido, guardar=False):
         lw=2,
         zorder=10,
     )
-    ax.set_ylabel("Transferencia")
+
     # ax.vlines(
     #     [lim_inf, lim_sup],
     #     np.min(T),
@@ -356,9 +355,14 @@ def generar_grafico(barrido, guardar=False):
     # )
     if barrido == "m3":
         ax.set_xlim(149.95e3, 150.35e3)
+    ax.set_xlabel("Frecuencia [ kHz ]")
     ax.xaxis.set_major_formatter(formatok)
     legend_locs = {"m3": 3, "m5": 1, "m7": 1}
-    ax.legend(loc=legend_locs[barrido])
+    if barrido != "m5":
+        ax.set_ylabel("Transferencia")
+        ax.legend(loc=legend_locs[barrido])
+    # if barrido != "m7":
+    #     ax.set_title(f"Modo {barrido[1]}")
     if guardar:
         fig.savefig(
             image_folder + f"grafico_barrido_{barrido}.svg", bbox_inches="tight"
@@ -367,7 +371,14 @@ def generar_grafico(barrido, guardar=False):
 
 # %%
 barridos = ["m3", "m5"]  # "m1" o "m3" o "m5" o "m7"
-for barrido in barridos:
-    generar_grafico(barrido, guardar=True)
-
+fig, axs = plt.subplots(
+    1,
+    2,
+    sharey=True,
+    figsize=(9, 3),
+    gridspec_kw={"wspace": 0.05},
+)
+for barrido, ax in zip(barridos, axs):
+    generar_grafico(barrido, guardar=False, ax=ax)
+fig.savefig(image_folder + f"grafico_barrido_m3_m5.svg", bbox_inches="tight")
 # %%

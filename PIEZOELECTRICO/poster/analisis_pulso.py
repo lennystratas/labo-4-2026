@@ -9,7 +9,7 @@ import os
 
 plt.style.use("seaborn-v0_8")
 
-fontsize = 17
+fontsize = 13
 plt.rcParams.update(
     {
         "font.family": "serif",
@@ -22,8 +22,11 @@ plt.rcParams.update(
         "mathtext.default": "regular",
         "mathtext.fontset": "cm",
         "legend.frameon": True,
+        "legend.fontsize": 13,
     }
 )
+
+w = {"amarillo": "#F3AA0C", "verde": "#055E49", "violeta": "#35274A", "rojo": "#F2300F"}
 
 
 def get_base_path():
@@ -41,7 +44,7 @@ def get_base_path():
 
 def formato_kilo(valor, posicion):
     # Dividimos entre 1000 y le decimos que muestre 1 decimal (.1f)
-    return f"{valor / 1000:.2f}"
+    return f"{valor / 1000:.0f}"
 
 
 def formato_exp(valor, posicion):
@@ -70,7 +73,7 @@ f1 = 50097
 # %%
 df = select_data()
 t = df.index.values
-fig, ax = plt.subplots()
+fig, ax1 = plt.subplots(figsize=(6, 3))
 dt = np.mean(np.diff(t))
 V1 = df["VoltajeCH1"]
 V2 = df["VoltajeCH2"]
@@ -78,10 +81,100 @@ n_points = 6000
 fft_amp = np.abs(np.fft.rfft(V2, n_points))
 fft_frec = np.fft.rfftfreq(n_points, d=dt)
 
-ax.plot(fft_frec, fft_amp, "--.", zorder=10)
-ax.set_xlim(80e3, 170e3)
-ax.xaxis.set_major_formatter(formatok)
-ax.set_ylim(0, 0.45)
-plt.vlines(2 * f1, 0, 0.45, label="$f_{esp}$ modo 2", linestyles="--", color="red")
-plt.vlines(3 * f1, 0, 0.45, label="$f_{esp}$ modo 3", linestyles="--", color="green")
+fig, axs = plt.subplots(
+    1,
+    2,
+    sharey=True,
+    figsize=(9, 3),
+    gridspec_kw={"wspace": 0.05},
+)
+ax1, ax2 = axs
+ax1.plot(
+    fft_frec,
+    fft_amp,
+    "--.",
+    color=w["verde"],
+    zorder=10,
+    label="DFT",
+)
+ax1.set_xlim(80e3, 170e3)
+ax1.xaxis.set_major_formatter(formatok)
+ax1.set_ylim(0, 0.7)
+ax1.vlines(2 * f1, 0, 0.45, label="$f_{esp}$ modo 2", linestyles="--", color=w["rojo"])
+ax1.vlines(
+    3 * f1,
+    0,
+    0.45,
+    label="$f_{esp}$ modo 3 = 100 kHz",
+    linestyles="--",
+    color=w["amarillo"],
+)
+ax1.set_xlabel("Freceuncia [ kHz ]")
+ax1.set_ylabel("Módulo DFT [ u.a. ]")
+ax1.legend(loc=9)
+
+
+ax2.plot(
+    fft_frec,
+    fft_amp,
+    "--.",
+    color=w["verde"],
+    zorder=10,
+    label="DFT",
+)
+ax2.set_xlim(180e3, 270e3)
+ax2.xaxis.set_major_formatter(formatok)
+# ax2.set_ylim(0, 1)
+ax2.vlines(2 * f1, 0, 0.45, label="$f_{esp}$ modo 2", linestyles="--", color=w["rojo"])
+ax2.vlines(
+    3 * f1,
+    0,
+    0.45,
+    label="$f_{esp}$ modo 3 = 100 kHz",
+    linestyles="--",
+    color=w["amarillo"],
+)
+ax2.set_xlabel("Freceuncia [ kHz ]")
+# ax.set_ylabel("Módulo DFT [ u.a. ]")
+# ax1.legend(loc=9)
+
+
 # plt.vlines(150159, 0, 0.45, label="$f_{med}$ modo 3", linestyles="--", color="purple")
+# %%
+
+fig, ax = plt.subplots(
+    1,
+    1,
+    figsize=(9, 3),
+)
+ax.plot(
+    fft_frec,
+    fft_amp,
+    "--.",
+    color=w["verde"],
+    zorder=10,
+    label="DFT",
+)
+ax.set_xlim(80e3, 270e3)
+ax.xaxis.set_major_formatter(formatok)
+ax.set_ylim(0, 0.7)
+ax.vlines(
+    [i * f1 for i in range(2, 6)],
+    0,
+    0.7,
+    label="$f_{esp}$ modos 2-5",
+    linestyles="--",
+    color=w["rojo"],
+)
+# ax.vlines(
+#     3 * f1,
+#     0,
+#     0.45,
+#     label="$f_{esp}$ modo 3 = 100 kHz",
+#     linestyles="--",
+#     color=w["amarillo"],
+# )
+ax.set_xlabel("Freceuncia [ kHz ]")
+ax.set_ylabel("Módulo DFT [ u.a. ]")
+ax.legend(loc=9)
+fig.savefig(image_folder + f"grafico_fourier.svg", bbox_inches="tight")
