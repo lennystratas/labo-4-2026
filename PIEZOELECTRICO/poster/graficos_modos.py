@@ -53,6 +53,15 @@ def formato_kilo(valor, posicion):
 formatok = ticker.FuncFormatter(formato_kilo)
 
 
+def formato_exp(valor, posicion):
+    # Dividimos entre 1000 y le decimos que muestre 1 decimal (.1f)
+    return f"{valor * 100:.0f}e-2"
+
+
+formatok = ticker.FuncFormatter(formato_kilo)
+
+formatexp = ticker.FuncFormatter(formato_kilo)
+
 # %% DEFINO MODELOS
 
 
@@ -299,7 +308,6 @@ def generar_grafico(barrido, ax, guardar=False):
     f0, Df, A = np.abs(
         popt1
     )  # Si A y Df son ambos negativos da lo mismo para el ajuste, tomamos positivos
-    print(f0)
     R2 = 9.8e3  # Ohm
     Rs = R2 * (1 - A) / A
     Ls = (Rs + R2) / (Df * 2 * np.pi)
@@ -326,14 +334,15 @@ def generar_grafico(barrido, ax, guardar=False):
     #     lw=1.5,
     #     zorder=9,
     # )
-    ax.plot(
-        frecs,
-        T_aj_c(frecs, *popt3),
-        color=w["amarillo"],
-        label="Ajuste con $C_2$",
-        lw=2,
-        zorder=10,
-    )
+    if barrido != "m7":
+        ax.plot(
+            frecs,
+            T_aj_c(frecs, *popt3),
+            color=w["amarillo"],
+            label="Ajuste con $C_2$",
+            lw=2,
+            zorder=10,
+        )
 
     # ax.vlines(
     #     [lim_inf, lim_sup],
@@ -358,11 +367,13 @@ def generar_grafico(barrido, ax, guardar=False):
     ax.set_xlabel("Frecuencia [ kHz ]")
     ax.xaxis.set_major_formatter(formatok)
     legend_locs = {"m3": 3, "m5": 1, "m7": 1}
-    if barrido != "m5":
+    if barrido == "m3":
         ax.set_ylabel("Transferencia")
         ax.legend(loc=legend_locs[barrido])
-    # if barrido != "m7":
-    #     ax.set_title(f"Modo {barrido[1]}")
+    if barrido == "m7":
+        ax.set_yticks(np.logspace(-2, -1.2339332168313084, 3))
+        ax.set_yticklabels(np.logspace(-2, -1.2339332168313084, 3))
+        ax.yaxis.set_major_formatter(formato_exp)
     if guardar:
         fig.savefig(
             image_folder + f"grafico_barrido_{barrido}.svg", bbox_inches="tight"
@@ -382,3 +393,22 @@ for barrido, ax in zip(barridos, axs):
     generar_grafico(barrido, guardar=False, ax=ax)
 fig.savefig(image_folder + f"grafico_barrido_m3_m5.svg", bbox_inches="tight")
 # %%
+fig, ax7 = plt.subplots(
+    figsize=(4, 3),
+)
+generar_grafico("m7", guardar=False, ax=ax7)
+
+
+fig.savefig(image_folder + f"grafico_barrido_m7.svg", bbox_inches="tight")
+# %% Modos 3 y 7
+# %%
+barridos = ["m3", "m7"]  # "m1" o "m3" o "m5" o "m7"
+fig, axs = plt.subplots(
+    1,
+    2,
+    figsize=(9, 3),
+    gridspec_kw={"wspace": 0.2},
+)
+for barrido, ax in zip(barridos, axs):
+    generar_grafico(barrido, guardar=False, ax=ax)
+fig.savefig(image_folder + f"grafico_barrido_m3_m7.svg", bbox_inches="tight")

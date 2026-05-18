@@ -198,7 +198,6 @@ R2 = 9.8e3  # Ohm
 Rs = R2 * (1 - A) / A
 Ls = (Rs + R2) / (Df * 2 * np.pi)
 Cs = 1 / (4 * np.pi**2 * Ls * f0**2)
-print(Rs, Ls, Cs)
 T_aj = lambda f, C2: transferencia_C2(f, Rs, Ls, Cs, C2, R2)
 phi_aj = lambda f, C2, phi_0: fase_C2(f, Rs, Ls, Cs, C2, R2, phi_0)
 p0 = (2.3e-12,)
