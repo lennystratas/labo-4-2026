@@ -24,7 +24,9 @@ plt.rcParams.update(
         "mathtext.default": "regular",
         "mathtext.fontset": "cm",
         "legend.frameon": True,
-        # "legend.fontsize": 15,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
+        "legend.fontsize": 14,
     }
 )
 
@@ -47,7 +49,7 @@ def get_base_path():
 
 def formato_kilo(valor, posicion):
     # Dividimos entre 1000 y le decimos que muestre 1 decimal (.1f)
-    return f"{valor / 1000:.2f}"
+    return f"{valor / 1000:.1f}"
 
 
 formatok = ticker.FuncFormatter(formato_kilo)
@@ -55,7 +57,7 @@ formatok = ticker.FuncFormatter(formato_kilo)
 
 def formato_exp(valor, posicion):
     # Dividimos entre 1000 y le decimos que muestre 1 decimal (.1f)
-    return f"{valor * 100:.0f}e-2"
+    return f"${valor * 100:.0f}.10^{{-2}}$"
 
 
 formatok = ticker.FuncFormatter(formato_kilo)
@@ -406,8 +408,8 @@ barridos = ["m3", "m7"]  # "m1" o "m3" o "m5" o "m7"
 fig, axs = plt.subplots(
     1,
     2,
-    figsize=(9, 3),
-    gridspec_kw={"wspace": 0.2},
+    figsize=(9.4, 3),
+    gridspec_kw={"wspace": 0.25},
 )
 for barrido, ax in zip(barridos, axs):
     generar_grafico(barrido, guardar=False, ax=ax)

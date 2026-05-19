@@ -24,7 +24,9 @@ plt.rcParams.update(
         "mathtext.default": "regular",
         "mathtext.fontset": "cm",
         "legend.frameon": True,
-        "legend.fontsize": 13,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        # "legend.fontsize": 15,
     }
 )
 
@@ -51,10 +53,8 @@ def formato_kilo(valor, posicion):
 
 
 def formato_exp(valor, posicion):
-    if valor == 0:
-        return "0"
-    else:
-        return f"{valor * 1000:.0f}e-3"
+    # Dividimos entre 1000 y le decimos que muestre 1 decimal (.1f)
+    return f"${valor * 100:.0f}.10^{{-2}}$"
 
 
 formatok = ticker.FuncFormatter(formato_kilo)
