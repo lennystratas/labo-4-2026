@@ -50,33 +50,45 @@ def transformar(m, Dm):
     R, C, L, C2 = m
     DR, DC, DL, DC2 = Dm
     f0 = 1 / np.sqrt(L * C) / (2 * np.pi)
-    f0_fr = 1 / np.sqrt(L * C) / (2 * np.pi) - np.sqrt(1 / L * (1 / C + 1 / C2)) / (
-        2 * np.pi
-    )
+    fr = np.sqrt(1 / L * (1 / C + 1 / C2)) / (2 * np.pi)
+    fr_f0 = fr - f0
     A = R2 / (R2 + R)
     Df = (R + R2) / L / (2 * np.pi)
     C_eq = 1 / (1 / C + 1 / C2)
-
     # --- Error for f0 ---
     df0_dL = -f0 / (2 * L)
     df0_dC = -f0 / (2 * C)
     Df0 = np.sqrt((df0_dL * DL) ** 2 + (df0_dC * DC) ** 2)
 
     # --- Error for f0_fr ---
-    # Split into f0 term and the series combination term (f_series = 1 / (2 * pi * sqrt(L * C_eq)))
-    f_series = 1 / (2 * np.pi * np.sqrt(L * C_eq))
+    dfr_dL = np.sqrt((1 / C + 1 / C2)) * (-1 / 2) * (L ** (-3 / 2)) / (2 * np.pi)
+    dfr_dC = (
+        np.sqrt(1 / L)
+        / (2 * np.sqrt((1 / C + 1 / C2)))
+        * (-1 / 2)
+        * (C ** (-3 / 2))
+        / (2 * np.pi)
+    )
+    dfr_dC2 = (
+        np.sqrt(1 / L)
+        / (2 * np.sqrt((1 / C + 1 / C2)))
+        * (-1 / 2)
+        * (C2 ** (-3 / 2))
+        / (2 * np.pi)
+    )
 
-    df0fr_dL = df0_dL - (-f_series / (2 * L))
-    df0fr_dC = df0_dC - (-f_series / (2 * C**2 * (1 / C + 1 / C2)))
-    df0fr_dC2 = -(-f_series / (2 * C2**2 * (1 / C + 1 / C2)))
+    dfr_f0_dL = dfr_dL - df0_dL
+    dfr_f0_dC = dfr_dC - df0_dC
+    dfr_f0_dC2 = dfr_dC2
 
-    Df0_fr = np.sqrt(
-        (df0fr_dL * DL) ** 2 + (df0fr_dC * DC) ** 2 + (df0fr_dC2 * DC2) ** 2
+    Dfr_f0 = np.sqrt(
+        (dfr_f0_dL * DL) ** 2 + (dfr_f0_dC * DC) ** 2 + (dfr_f0_dC2 * DC2) ** 2
     )
 
     # --- Error for A ---
     dA_dR = -R2 / (R2 + R) ** 2
-    DA = np.abs(dA_dR * DR)
+    dA_dR2 = R / (R2 + R) ** 2
+    DA = np.sqrt((dA_dR * DR**2 + dA_dR2 * DR2**2))
 
     # --- Error for Df (Bandwidth) ---
     dDf_dR = 1 / (2 * np.pi * L)
@@ -84,7 +96,7 @@ def transformar(m, Dm):
     DDf = np.sqrt((dDf_dR * DR) ** 2 + (dDf_dL * DL) ** 2)
 
     # Return both the values and their respective propagated uncertainties
-    return (f0, f0_fr, A, Df), (Df0, Df0_fr, DA, DDf)
+    return (f0, fr_f0, A, Df), (Df0, Dfr_f0, DA, DDf)
 
 
 # %% DATOS
@@ -125,3 +137,5 @@ Dm5 = [
     np.float64(8.599903727233739e-19),
     np.float64(2.4961501395149355e-15),
 ]
+transformar(m1, Dm1)
+# El valor para la antiresonancia no es rasonable? Pero la formula parece estar bien?
