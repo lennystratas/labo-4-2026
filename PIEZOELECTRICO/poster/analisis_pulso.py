@@ -109,7 +109,7 @@ ax1.vlines(
     linestyles="--",
     color=w["amarillo"],
 )
-ax1.set_xlabel("Freceuncia [ kHz ]")
+ax1.set_xlabel("Frecuencia [ kHz ]")
 ax1.set_ylabel("Módulo DFT [ u.a. ]")
 ax1.legend(loc=9)
 
@@ -134,7 +134,7 @@ ax2.vlines(
     linestyles="--",
     color=w["amarillo"],
 )
-ax2.set_xlabel("Freceuncia [ kHz ]")
+ax2.set_xlabel("Frecuencia [ kHz ]")
 # ax.set_ylabel("Módulo DFT [ u.a. ]")
 # ax1.legend(loc=9)
 
@@ -174,7 +174,7 @@ ax.vlines(
 #     linestyles="--",
 #     color=w["amarillo"],
 # )
-ax.set_xlabel("Freceuncia [ kHz ]")
+ax.set_xlabel("Frecuencia [ kHz ]")
 ax.set_ylabel("Módulo DFT [ u.a. ]")
 ax.legend(loc=9)
 fig.savefig(image_folder + f"grafico_fourier.svg", bbox_inches="tight")

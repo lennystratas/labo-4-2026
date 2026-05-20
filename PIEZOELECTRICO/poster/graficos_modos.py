@@ -317,6 +317,7 @@ def generar_grafico(barrido, ax, guardar=False):
     T_aj = lambda f, C2: transferencia_C2(f, Rs, Ls, Cs, C2, R2)
     phi_aj = lambda f, C2, phi_0: fase_C2(f, Rs, Ls, Cs, C2, R2, phi_0)
     p0 = (2.3e-12,)
+    print(barrido, popt1)
     popt2, pcov2 = curve_fit(T_aj, frecs, T, p0=p0, sigma=DT)
     # Ajuste modelo complejo logaritmico
     T_aj_c = lambda f, R, L, C, C2: transferencia_C2(f, R, L, C, C2, R2)

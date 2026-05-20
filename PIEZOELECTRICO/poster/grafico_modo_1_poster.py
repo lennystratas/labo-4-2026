@@ -214,6 +214,7 @@ popt5, pcov5 = curve_fit(T_aj_log, frecs, np.log10(T), p0=p0)
 espaciados = np.diff(frecs)
 pesos = 1 / np.concatenate([espaciados, [espaciados[-1]]])
 popt6, pcov6 = curve_fit(phi_aj_c, frecs, phi, p0=p0_phi, sigma=pesos * Dphi)
+print(popt6[-1], np.sqrt(np.diag(pcov6))[-1])
 # %% GRAFICOS
 fig, axs = plt.subplots(2, 1, sharex=True, gridspec_kw={"hspace": 0.05})
 ax1, ax2 = axs
