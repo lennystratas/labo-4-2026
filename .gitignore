@@ -1,3 +1,6 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+/PIEZOELECTRICO/docs/superpowers
+/PIEZOELECTRICO/.claude
+/PIEZOELECTRICO/.superpowers

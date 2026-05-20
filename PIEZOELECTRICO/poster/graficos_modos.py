@@ -290,6 +290,9 @@ def generar_grafico(barrido, ax, guardar=False):
     )
     # AJUSTE MODELO SIMPLE
     T = A2 / A1
+    # phi = (phi_2-phi_1) % 360
+    # Dphi = Dphi_2
+    # phi[phi >= 180] -= 360
     DT = np.sqrt((DA1 * A2 / A1**2) ** 2 + (DA2 * A2 / A1) ** 2) * 20 / np.log(10)
     rangos = {
         "m1": (50.05e3, 50.15e3),
@@ -306,6 +309,8 @@ def generar_grafico(barrido, ax, guardar=False):
         p0=((lim_sup + lim_inf) / 2, 200, 0.5),
     )
     popt1 = np.abs(popt1)
+    # popt1_p, pcov1_p = curve_fit(fase_RLC, frecs[rango], phi[rango], p0=((lim_sup + lim_inf) / 2, 200, -25))
+    # print(popt1_p)
     # AJUSTE MODELO COMPLEJO
     f0, Df, A = np.abs(
         popt1
