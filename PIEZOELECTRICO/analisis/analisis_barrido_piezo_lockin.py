@@ -162,10 +162,11 @@ def select_data(filtro):
 
 
 # %% BARRIDO
-barrido = "fino"  # "grueso" o "fino"
+barrido = "entrada"  # "grueso" o "fino"
 df_entrada = select_data("entrada")
 A1 = np.mean(df_entrada["Amplitud"].values)
 DA1 = np.std(df_entrada["Amplitud"].values)
+print(A1, DA1)
 df_barrido = select_data("cas")
 frecs = df_barrido.index.values
 A2 = df_barrido["Amplitud"].values
