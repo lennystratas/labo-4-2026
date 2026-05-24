@@ -137,5 +137,73 @@ Dm5 = [
     np.float64(8.599903727233739e-19),
     np.float64(2.4961501395149355e-15),
 ]
+<<<<<<< Updated upstream
 transformar(m1, Dm1)
 # El valor para la antiresonancia no es rasonable? Pero la formula parece estar bien?
+=======
+
+
+# %% GRAFICO 2x2: R, L, C, C2 vs f0
+# Para cada modo computo f0 (resonancia) y su error a partir de los parametros ajustados
+modos = [("m1", m1, Dm1), ("m3", m3, Dm3), ("m5", m5, Dm5)]
+
+R_vals = np.array([m[0] for _, m, _ in modos])
+L_vals = np.array([m[1] for _, m, _ in modos])
+C_vals = np.array([m[2] for _, m, _ in modos])
+C2_vals = np.array([m[3] for _, m, _ in modos])
+
+R_errs = np.array([d[0] for _, _, d in modos])
+L_errs = np.array([d[1] for _, _, d in modos])
+C_errs = np.array([d[2] for _, _, d in modos])
+C2_errs = np.array([d[3] for _, _, d in modos])
+
+f0_list = []
+Df0_list = []
+for _, m, Dm in modos:
+    (f0, _, _, _), (Df0, _, _, _) = transformar(m, Dm)
+    f0_list.append(f0)
+    Df0_list.append(Df0)
+f0_arr = np.array(f0_list)
+Df0_arr = np.array(Df0_list)
+
+# Conversiones a unidades "lindas"
+f0_kHz = f0_arr / 1e3
+Df0_kHz = Df0_arr / 1e3
+R_kOhm = R_vals / 1e3
+R_kOhm_err = R_errs / 1e3
+C_fF = C_vals * 1e15  # capacitancia en femtofarads
+C_fF_err = C_errs * 1e15
+C2_pF = C2_vals * 1e12
+C2_pF_err = C2_errs * 1e12
+
+panel_color = {
+    "R":  w["violeta"],
+    "L":  w["violeta"],
+    "C":  w["violeta"],
+    "C2": w["amarillo"],
+}
+
+fig, axes = plt.subplots(2, 2, figsize=(7.2, 5.0), sharex=True, constrained_layout=True)
+ax_R, ax_L, ax_C, ax_C2 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
+
+paneles = [
+    (ax_R,  R_kOhm, R_kOhm_err, panel_color["R"],  r"$R$ [k$\Omega$]"),
+    (ax_L,  L_vals, L_errs,     panel_color["L"],  r"$L$ [H]"),
+    (ax_C,  C_fF,   C_fF_err,   panel_color["C"],  r"$C$ [fF]"),
+    (ax_C2, C2_pF,  C2_pF_err,  panel_color["C2"], r"$C_2$ [pF]"),
+]
+
+for ax, vals, errs, color, ylabel in paneles:
+    ax.errorbar(f0_kHz, vals, xerr=Df0_kHz, yerr=errs,
+                fmt="o", color=color, markersize=11, capsize=4)
+    ax.set_ylabel(ylabel)
+
+for ax in (ax_C, ax_C2):
+    ax.set_xlabel(r"$f_0$ [kHz]")
+
+image_folder = get_base_path() + "poster/figuras/"
+fig.savefig(image_folder + "grafico_parametros_ajuste.svg", bbox_inches="tight")
+plt.show()
+
+# %%
+>>>>>>> Stashed changes
