@@ -313,7 +313,6 @@ def generar_grafico(barrido, ax, guardar=False):
     T_aj = lambda f, C2: transferencia_C2(f, Rs, Ls, Cs, C2, R2)
     phi_aj = lambda f, C2, phi_0: fase_C2(f, Rs, Ls, Cs, C2, R2, phi_0)
     p0 = (2.3e-12,)
-    print(barrido, popt1)
     popt2, pcov2 = curve_fit(T_aj, frecs, T, p0=p0, sigma=DT)
     # Ajuste modelo complejo logaritmico
     T_aj_c = lambda f, R, L, C, C2: transferencia_C2(f, R, L, C, C2, R2)
@@ -363,6 +362,17 @@ def generar_grafico(barrido, ax, guardar=False):
     # )
     ax.set_xlabel("Frecuencia [kHz]")
     ax.xaxis.set_major_formatter(formatok)
+    letras = {"m3": "a)", "m5": "b)", "m7": "c)"}
+    ax.text(
+        0.03,
+        0.93,
+        letras[barrido],
+        transform=ax.transAxes,
+        fontsize=fontsize,
+        weight="bold",
+        va="top",
+        ha="left",
+    )
     legend_locs = {"m3": 3, "m5": 1, "m7": 1}
     if barrido == "m3":
         ax.set_xlim(149.95e3, 150.35e3)
