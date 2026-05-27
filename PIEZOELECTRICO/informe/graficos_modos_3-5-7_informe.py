@@ -302,10 +302,16 @@ def generar_grafico(barrido, ax, guardar=False):
         p0=((lim_sup + lim_inf) / 2, 200, 0.5),
     )
     popt1 = np.abs(popt1)
+    # print(popt1, np.sqrt(np.diag(pcov1)))
+
     # AJUSTE MODELO COMPLEJO
     f0, Df, A = np.abs(
         popt1
     )  # Si A y Df son ambos negativos da lo mismo para el ajuste, tomamos positivos
+    # Df0, DDf, DA = np.sqrt(np.diag(pcov1))
+    # Q = f0 / Df
+    # DQ = np.sqrt((1 / Df * Df0) ** 2 + (f0 / Df**2 * DDf) ** 2)
+    # print(Q, DQ)
     R2 = 9.8e3  # Ohm
     Rs = R2 * (1 - A) / A
     Ls = (Rs + R2) / (Df * 2 * np.pi)
@@ -324,15 +330,15 @@ def generar_grafico(barrido, ax, guardar=False):
     # Transferencia
     ax.set_yscale("log")
     ax.errorbar(frecs, T, fmt=".", yerr=DT, color=w["verde"], label="Datos", zorder=5)
-    # ax.plot(
-    #     frecs,
-    #     transferencia_RLC(frecs, *popt1),
-    #     color=w["rojo"],
-    #     label="Ajuste RLC",
-    #     lw=1.5,
-    #     zorder=9,
-    # )
     if barrido != "m7":
+        #     ax.plot(
+        #         frecs,
+        #         transferencia_RLC(frecs, *popt1),
+        #         color=w["rojo"],
+        #         label="Ajuste RLC",
+        #         lw=1.5,
+        #         zorder=9,
+        #     )
         ax.plot(
             frecs,
             T_aj_c(frecs, *popt3),
@@ -408,5 +414,3 @@ for barrido, ax in zip(barridos, axs):
     generar_grafico(barrido, guardar=False, ax=ax)
 
 fig.savefig(image_folder + f"grafico_barrido_m3_m7.pdf", bbox_inches="tight")
-
-# %%

@@ -102,7 +102,7 @@ ax.vlines(
     [i * f1 for i in range(1, 11)],
     0,
     np.max(fft_amp),
-    label="$f_{esp}$ modos 2-5",
+    label="$m\cdot f_0$, $m= 1,\\dots,5$",
     linestyles="--",
     color=w["rojo"],
 )
