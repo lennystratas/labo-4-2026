@@ -17,26 +17,6 @@ def moment_of_inertia_two_parallelepipeds_z(
     """
     Moment of inertia around the global z-axis for
     two identical rectangular parallelepipeds.
-
-    Centers of mass:
-        (+r, 0, 0)
-        (-r, 0, 0)
-
-    Parameters
-    ----------
-    density : float
-        Density of parallelepipeds.
-
-    lx, ly, lz : float
-        Side lengths.
-
-    r : float
-        Distance of each center from origin along x.
-
-    Returns
-    -------
-    Iz : float
-        Total moment of inertia around z-axis.
     """
     mass = density * lx * ly * lz
     # Intrinsic inertia of one prism around its own COM
@@ -247,13 +227,14 @@ def f(
 # Problem parameters
 k_actual = 0.007047886187862911  # Nuestro k de ahora
 k_diego = 3.66e-5  # k de Diego estimado
-k_prueba = 1e-4
+k_prueba = 3.5818214072896726e-05  # Para probar que pasaría con distintos k
 k = k_prueba
 r = 37e-2
 d = 5e-2
-lxs_p, lys_p, lzs_p = 14e-2, 4e-2, 7e-2
-lxs, lys, lzs = 15e-2, 5e-2, 10e-2
-density = 11340
+lxs_p, lys_p, lzs_p = 14.04e-2, 3.48e-2, 7e-2
+lxs, lys, lzs = 15.05e-2, 5.05e-2, 10.15e-2
+# density = 11340
+density = 3.80 / (lxs_p * lys_p * lzs_p)
 G = _G
 I = moment_of_inertia_two_parallelepipeds_z(density, lxs_p, lys_p, lzs_p, r)
 gamma = 0
@@ -262,7 +243,7 @@ gamma = 0
 N_order = 10
 nodes, weights = np.polynomial.legendre.leggauss(N_order)
 
-# %% Posición de equilibriolxs
+# %% Posición de equilibrio
 args = (k, r, d, lxs_p, lys_p, lzs_p, lxs, lys, lzs, density, G, nodes, weights)
 
 equilibrium = fsolve(total_torque, 0, args=args) * 180 / np.pi
@@ -289,7 +270,8 @@ ode_args = (
 phi_0 = 1
 phi_dot_0 = 0
 y0 = np.array([phi_0, phi_dot_0]) * np.pi / 180
-t = np.linspace(0, 30 * 60, 1000)
+t = np.linspace(0, 10 * 20 * 60, 10000)
 sol = solve_ivp(f, (t[0], t[-1]), y0, t_eval=t, args=ode_args)
 phi = sol.y[0] * 180 / np.pi
 plt.plot(t, phi, ".")
+print(np.mean(phi))
