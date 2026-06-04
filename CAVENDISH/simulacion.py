@@ -222,12 +222,77 @@ def f(
     return np.array([phi_dot, (-k * phi - gamma * phi_dot + gravity_torque) / I])
 
 
+# %% Funciones analisis
+from scipy.signal import medfilt, butter, filtfilt, find_peaks
+
+
+# ---------- funciones del análisis robusto ----------
+def segmentos(t, masa_times):
+    """Bordes (t_ini, t_fin) de cada tramo entre eventos de masa."""
+    cortes = [t[0]] + [m for m in masa_times if t[0] < m < t[-1]] + [t[-1]]
+    return list(zip(cortes[:-1], cortes[1:]))
+
+
+def _impar(n, minimo=3):
+    n = int(round(n))
+    n += n % 2 == 0  # asegura impar
+    return max(n, minimo)
+
+
+def limpiar(x, dt, despike_s, lowpass_hz):
+    """Despike (mediana, mata glitches) + pasabajos Butterworth de fase cero."""
+    xc = medfilt(x, _impar(despike_s / dt)) if despike_s > 0 else x
+    nyq = 0.5 / dt
+    b, a = butter(4, min(lowpass_hz / nyq, 0.99), btype="low")
+    return filtfilt(b, a, xc)
+
+
+def turning_points(xf, dt, periodo_aprox):
+    """Índices de máximos y mínimos de posición (turning points)."""
+    dist = max(
+        1, int(round(0.6 * periodo_aprox / dt))
+    )  # los máximos están a ~1 período
+    i_max, _ = find_peaks(xf, distance=dist)
+    i_min, _ = find_peaks(-xf, distance=dist)
+    return i_max, i_min
+
+
+def envolvente_media(t, xf, i_max, i_min):
+    """Equilibrio(t) = línea media entre envolvente superior e inferior (no el promedio)."""
+    if len(i_max) < 1 or len(i_min) < 1:
+        return np.full_like(t, np.nan)
+    sup = np.interp(t, t[i_max], xf[i_max])
+    inf = np.interp(t, t[i_min], xf[i_min])
+    return 0.5 * (sup + inf)
+
+
+def periodo_por_picos(t, i_max, i_min):
+    """Período = mediana del espaciado entre picos consecutivos (máximos y mínimos)."""
+    sp = np.concatenate([np.diff(t[i_max]), np.diff(t[i_min])])
+    return (float(np.median(sp)), float(np.std(sp))) if len(sp) else (np.nan, np.nan)
+
+
+def periodo_autocorr(x, dt, periodo_aprox):
+    """Período por el primer pico de la autocorrelación (robusto, usa toda la señal)."""
+    xc = x - x.mean()
+    ac = np.correlate(xc, xc, "full")[len(xc) - 1 :]
+    if ac[0] == 0:
+        return np.nan
+    ac /= ac[0]
+    lo = int(0.4 * periodo_aprox / dt)
+    hi = min(int(2.5 * periodo_aprox / dt), len(x) - 1)
+    if hi <= lo + 1:
+        return np.nan
+    pk, _ = find_peaks(ac[lo:hi])
+    return (pk[np.argmax(ac[lo:hi][pk])] + lo) * dt if len(pk) else np.nan
+
+
 # %% Definicion parámetros
 
 # Problem parameters
 k_actual = 0.007047886187862911  # Nuestro k de ahora
 k_diego = 3.66e-5  # k de Diego estimado
-k_prueba = 3.5818214072896726e-05  # Para probar que pasaría con distintos k
+k_prueba = 0.00029402198965276533  # Para probar que pasaría con distintos k
 k = k_prueba
 r = 37e-2
 d = 5e-2
@@ -237,7 +302,7 @@ lxs, lys, lzs = 15.05e-2, 5.05e-2, 10.15e-2
 density = 3.80 / (lxs_p * lys_p * lzs_p)
 G = _G
 I = moment_of_inertia_two_parallelepipeds_z(density, lxs_p, lys_p, lzs_p, r)
-gamma = 0
+gamma = 0.0001
 
 # Integration parameters
 N_order = 10
@@ -274,4 +339,44 @@ t = np.linspace(0, 10 * 20 * 60, 10000)
 sol = solve_ivp(f, (t[0], t[-1]), y0, t_eval=t, args=ode_args)
 phi = sol.y[0] * 180 / np.pi
 plt.plot(t, phi, ".")
-print(np.mean(phi))
+# %% Analisis
+t = t
+x_deg = phi + np.random.normal(0, 0.1, size=t.shape)
+
+# ---------- parámetros (ajustá a tu medición) ----------
+PERIODO_APROX_S = (
+    750.0  # período aproximado (rough): separación de picos y autocorrelación
+)
+DESPIKE_S = 2.0  # ventana del filtro de mediana anti-glitch (0 = sin despike)
+LOWPASS_N = 5  # corte del pasabajos = LOWPASS_N / período  [Hz]. Menor = más suave
+print(LOWPASS_N)
+dt = float(np.median(np.diff(t)))
+x_filt = limpiar(x_deg, dt, DESPIKE_S, LOWPASS_N / PERIODO_APROX_S)  # señal limpia
+i_max, i_min = turning_points(x_filt, dt, PERIODO_APROX_S)  # picos de posición
+eq_t = envolvente_media(t, x_filt, i_max, i_min)  # equilibrio(t)
+
+print(
+    f"{'tramo':>5} {'t_ini':>7} {'t_fin':>7} | {'T_picos':>14} {'T_autocorr':>11} | {'eq (deg)':>9}"
+)
+tramos = []
+masa_times = [0]
+for k, (ta, tb) in enumerate(segmentos(t, masa_times)):
+    m = (t >= ta) & (t <= tb)
+    mmax = i_max[(t[i_max] >= ta) & (t[i_max] <= tb)]
+    mmin = i_min[(t[i_min] >= ta) & (t[i_min] <= tb)]
+    T_p, T_p_std = periodo_por_picos(t, mmax, mmin)
+    T_ac = periodo_autocorr(x_filt[m], dt, PERIODO_APROX_S)
+    eq = float(np.median(eq_t[m]))  # equilibrio del tramo (línea media)
+    tramos.append(dict(t_ini=ta, t_fin=tb, T_p=T_p, T_p_std=T_p_std, T_ac=T_ac, eq=eq))
+    print(
+        f"{k:>5} {ta:>7.1f} {tb:>7.1f} | {T_p:>8.2f} ± {T_p_std:<3.1f} {T_ac:>11.2f} | {eq:>9.4f}"
+    )
+
+# corrimiento de equilibrio entre tramos (lo que mide Cavendish)
+for k in range(1, len(tramos)):
+    d = tramos[k]["eq"] - tramos[k - 1]["eq"]
+    print(
+        f"Δequilibrio  tramo {k - 1}->{k} = {d:+.4f}°   (masa en t = {tramos[k]['t_ini']:.1f} s)"
+    )
+
+# %%
