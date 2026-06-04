@@ -7,5 +7,5 @@ umbral	0.2
 guardar_cada_s	60
 columnas	t_s	x_mm	y_mm
 distancia_a_la_pantalla (cm)	40
-masa_1_s	1400
+masa_1_s	1000
 masa_2_s	1894.8

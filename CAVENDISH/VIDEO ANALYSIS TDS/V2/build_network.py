@@ -97,7 +97,7 @@ setq(clean, 'format', 'rgba32float')
 measure = make(scriptCHOP, 'measure', 800, 0)
 
 # ----------------------- CONTROL (parametros) -----------------------
-ctrl = make(baseCOMP, 'CONTROL', 600, 250)
+ctrl = make(containerCOMP, 'CONTROL', 600, 250)
 if ctrl:
     try:
         pg = ctrl.appendCustomPage('Medidor')
@@ -105,20 +105,33 @@ if ctrl:
         th = pg.appendFloat('Threshold', label='Umbral (0-1)')
         th[0].normMin = 0; th[0].normMax = 1; th[0].default = 0.08; th[0].val = 0.08
 
+        # señal mínima del pixel mas brillante para considerar que el laser esta en pantalla
+        ms = pg.appendFloat('Minsignal', label='Señal mín. (pico)')
+        ms[0].normMin = 0; ms[0].normMax = 1; ms[0].default = 0.1; ms[0].val = 0.1
+
         sp = pg.appendFloat('Saveperiod', label='Guardar cada (s)')
         sp[0].normMin = 1; sp[0].normMax = 600; sp[0].default = 60; sp[0].val = 60
 
         kd = pg.appendFloat('Knowndist', label='Dist. conocida (mm)')
         kd[0].normMin = 1; kd[0].normMax = 1000; kd[0].default = 100; kd[0].val = 100
 
-        for nm, dv in (('Marker1x',0.3),('Marker1y',0.5),('Marker2x',0.7),('Marker2y',0.5)):
+        # marcadores de calibracion, EN PIXELES (origen 0,0 abajo-izquierda)
+        for nm, dv, mx in (('Marker1x', 600, 1920), ('Marker1y', 540, 1080),
+                           ('Marker2x', 1320, 1920), ('Marker2y', 540, 1080)):
             mp = pg.appendFloat(nm)
-            mp[0].normMin = 0; mp[0].normMax = 1; mp[0].default = dv; mp[0].val = dv
+            mp[0].normMin = 0; mp[0].normMax = mx; mp[0].default = dv; mp[0].val = dv
 
+        # origen (0,0) de la medicion, EN PIXELES (abajo-izquierda)
+        cxp = pg.appendFloat('Centerx', label='Origen X (px)')
+        cxp[0].normMin = 0; cxp[0].normMax = 1920; cxp[0].default = 960; cxp[0].val = 960
+        cyp = pg.appendFloat('Centery', label='Origen Y (px)')
+        cyp[0].normMin = 0; cyp[0].normMax = 1080; cyp[0].default = 540; cyp[0].val = 540
+
+        # mm/px: distancia entre los dos marcadores en PIXELES (ya no por fraccion)
         mpp = pg.appendFloat('Mmperpx', label='mm/px (auto)')
-        mpp[0].expr = ("me.par.Knowndist / max(("
-                       "((me.par.Marker2x-me.par.Marker1x)*op('source').width)**2 + "
-                       "((me.par.Marker2y-me.par.Marker1y)*op('source').height)**2)**0.5, 1e-9)")
+        mpp[0].expr = ("me.par.Knowndist / max("
+                       "((me.par.Marker2x-me.par.Marker1x)**2 + "
+                       "(me.par.Marker2y-me.par.Marker1y)**2)**0.5, 1e-9)")
         mpp[0].mode = ParMode.EXPRESSION
         mpp[0].readOnly = True
 
@@ -161,8 +174,9 @@ for mk, sx, sy in ((mark1,'Marker1x','Marker1y'), (mark2,'Marker2x','Marker2y'))
     # punto redondo: corrige el aspecto -> radiox = radioy * (H/W)
     setp(mk, 'radiusy', 0.02)
     setexpr(mk, 'radiusx', "0.02*op('source').height/op('source').width")
-    setexpr(mk, 'centerx', "op('CONTROL').par.%s*2-1" % sx)
-    setexpr(mk, 'centery', "1-op('CONTROL').par.%s*2" % sy)   # y de imagen va al reves
+    # markers en pixeles (0..W, 0..H, origen abajo-izq) -> NDC (-1..1, y arriba): sin flip
+    setexpr(mk, 'centerx', "op('CONTROL').par.%s/op('source').width*2-1" % sx)
+    setexpr(mk, 'centery', "op('CONTROL').par.%s/op('source').height*2-1" % sy)
     setp(mk, 'fillcolorr', 1); setp(mk, 'fillcolorg', 0); setp(mk, 'fillcolorb', 0)
 wire(source, monitor, 0)
 wire(mark1,  monitor, 1)
@@ -335,11 +349,13 @@ mcb = make(textDAT, 'measure_callbacks', 1200, 150)
 if mcb:
     mcb.text = r'''# measure - centroide ponderado por intensidad, EXACTO, con numpy.
 # Lee el TOP 'clean' (imagen ya con fondo restado + umbral) y calcula el centro
-# de masa sobre TODOS los pixeles. Salida (canales):
-#   x_mm, y_mm      posicion en mm (lo que se graba)
-#   x_px, y_px      posicion en pixeles (diagnostico)
-#   intensity       suma total de intensidad (diagnostico / control de senal)
-#   valid           1 si habia senal sobre el umbral, 0 si no
+# de masa, RELATIVO al origen (Centerx, Centery) en PIXELES.
+# Sistema: 0,0 abajo-izquierda ; (W,H) arriba-derecha. Salida (canales):
+#   x_mm, y_mm      posicion en mm respecto del origen (lo que se graba)
+#   x_px, y_px      posicion en pixeles respecto del origen (diagnostico)
+#   intensity       suma total de intensidad (diagnostico)
+#   peak            pixel mas brillante (para calibrar Minsignal)
+#   valid           1 si hay un punto brillante (laser en pantalla), 0 si no
 import numpy as np
 
 def onCook(scriptOp):
@@ -348,33 +364,44 @@ def onCook(scriptOp):
     ctrl = op('CONTROL')
     try:    mmpx = float(ctrl.par.Mmperpx)
     except: mmpx = 0.0
+    try:    ox = float(ctrl.par.Centerx)   # origen X en pixeles (0 = izquierda)
+    except: ox = 0.0
+    try:    oy = float(ctrl.par.Centery)   # origen Y en pixeles (0 = abajo)
+    except: oy = 0.0
+    try:    minsig = float(ctrl.par.Minsignal)   # umbral del pixel mas brillante
+    except: minsig = 0.1
 
-    a = op('clean').numpyArray(delayed=False)     # (H, W, canales), origen abajo-izq
+    a = op('clean').numpyArray(delayed=False)     # (H, W, canales), origen ABAJO-izq
     if a is None:
         return
     I = a[:, :, 0].astype('float64')              # intensidad (canal R)
     H, W = I.shape
 
-    col = I.sum(axis=0)                           # perfil horizontal (largo W)
-    row = I.sum(axis=1)                           # perfil vertical   (largo H)
     total = float(I.sum())
+    peak  = float(I.max())                        # pixel mas brillante
+    # valido = hay un punto BRILLANTE (laser en pantalla), no solo ruido difuso
+    valid = 1.0 if (peak > minsig and total > 1e-9) else 0.0
 
-    valid = 1.0 if total > 1e-9 else 0.0
     if valid:
-        xidx = float((col * np.arange(W)).sum() / total)            # 0..W-1
-        yidx = float((row * np.arange(H)).sum() / total)            # 0..H-1 (abajo->arriba)
-        x_px = xidx
-        y_px = (H - 1) - yidx                     # paso a origen arriba-izq (como la imagen)
-        scriptOp.store('lx', x_px); scriptOp.store('ly', y_px)
+        col = I.sum(axis=0)                        # perfil horizontal (largo W)
+        row = I.sum(axis=1)                        # perfil vertical   (largo H, abajo->arriba)
+        x_abs = float((col * np.arange(W)).sum() / total)   # 0..W-1 desde la IZQUIERDA
+        y_abs = float((row * np.arange(H)).sum() / total)   # 0..H-1 desde ABAJO
+        scriptOp.store('lx', x_abs); scriptOp.store('ly', y_abs)
     else:
-        x_px = scriptOp.fetch('lx', (W - 1) / 2.0)
-        y_px = scriptOp.fetch('ly', (H - 1) / 2.0)
+        x_abs = scriptOp.fetch('lx', (W - 1) / 2.0)
+        y_abs = scriptOp.fetch('ly', (H - 1) / 2.0)
+
+    # 0,0 en el pixel (Centerx, Centery)
+    x_px = x_abs - ox
+    y_px = y_abs - oy
 
     scriptOp.appendChan('x_mm')[0]      = x_px * mmpx
     scriptOp.appendChan('y_mm')[0]      = y_px * mmpx
     scriptOp.appendChan('x_px')[0]      = x_px
     scriptOp.appendChan('y_px')[0]      = y_px
     scriptOp.appendChan('intensity')[0] = total
+    scriptOp.appendChan('peak')[0]      = peak
     scriptOp.appendChan('valid')[0]     = valid
     scriptOp.appendChan('clock')[0]     = absTime.frame   # cambia cada frame -> dispara chopexec
     return
