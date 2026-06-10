@@ -292,10 +292,10 @@ def periodo_autocorr(x, dt, periodo_aprox):
 # Problem parameters
 k_actual = 0.007047886187862911  # Nuestro k de ahora
 k_diego = 3.66e-5  # k de Diego estimado
-k_prueba = 0.00029402198965276533  # Para probar que pasaría con distintos k
+k_prueba = 0.0001262092012659314  # Para probar que pasaría con distintos k
 k = k_prueba
 r = 37e-2
-d = 5e-2
+d = 3e-2
 lxs_p, lys_p, lzs_p = 14.04e-2, 3.48e-2, 7e-2
 lxs, lys, lzs = 15.05e-2, 5.05e-2, 10.15e-2
 # density = 11340
@@ -312,7 +312,7 @@ nodes, weights = np.polynomial.legendre.leggauss(N_order)
 args = (k, r, d, lxs_p, lys_p, lzs_p, lxs, lys, lzs, density, G, nodes, weights)
 
 equilibrium = fsolve(total_torque, 0, args=args) * 180 / np.pi
-print(equilibrium)
+print(f"Desplazaminto equilibrio: {equilibrium[0]:.4f}°")
 
 # %% Simulación
 ode_args = (
