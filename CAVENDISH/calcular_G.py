@@ -5,6 +5,7 @@ from scipy.constants import G as _G
 from scipy.optimize import fsolve
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
+import time
 
 
 def moment_of_inertia_two_parallelepipeds_z(
@@ -179,5 +180,18 @@ tau_con_G_1 = calculate_torque_z(
 )
 
 G = k * delta_phi / tau_con_G_1
+
+diff_rel = np.abs(G - _G) / (G + _G) * 2
+print("G da:")
+print("tatan tatan...")
+time.sleep(2)
 print(G)
+time.sleep(1)
+print("Debería dar ...")
+time.sleep(2)
+print(_G)
+if diff_rel < 0.05:
+    print(f"Diferencia reativa {diff_rel} < 5%, felicitaciones!")
+else:
+    print(f"Diferencia reativa {diff_rel} >= 5%, son unos fracasados :(")
 # %%
