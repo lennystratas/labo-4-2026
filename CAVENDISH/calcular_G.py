@@ -191,7 +191,7 @@ print("Debería dar ...")
 time.sleep(2)
 print(_G)
 if diff_rel < 0.05:
-    print(f"Diferencia reativa {diff_rel} < 5%, felicitaciones!")
+    print(f"Diferencia relativa {diff_rel} < 5%, felicitaciones!")
 else:
-    print(f"Diferencia reativa {diff_rel} >= 5%, son unos fracasados :(")
+    print(f"Diferencia relativa {diff_rel} >= 5%, son unos fracasados :(")
 # %%
