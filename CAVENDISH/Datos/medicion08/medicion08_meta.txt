@@ -1,0 +1,10 @@
+# metadatos de la medicion
+fecha	2026-06-17T15:56:39
+mm_por_px	0.3410665312
+width_px	1920
+height_px	1080
+umbral	0.65
+guardar_cada_s	60
+columnas	t_s	x_mm	y_mm
+distancia_a_la_pantalla (cm)	132
+masa_1_s	678.133333
