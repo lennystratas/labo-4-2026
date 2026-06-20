@@ -1,5 +1,5 @@
 # metadatos de la medicion
-fecha	2026-06-17T18:38:10
+fecha	2026-06-17T19:03:02
 mm_por_px	0.3410665312
 width_px	1920
 height_px	1080
