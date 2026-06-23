@@ -131,13 +131,13 @@ def calculate_torque_z(
 # %%
 k = 0.0001262092012659314
 r = 37e-2
-d = 8.5e-2
+d = 9.5e-2
 lxs_p, lys_p, lzs_p = 14.04e-2, 3.48e-2, 7e-2
 lxs, lys, lzs = 6e-2, 5.05e-2, 10.15e-2
 xc, yc, zc = r, d, 0
 # density = 11340
 density = 3.80 / (lxs_p * lys_p * lzs_p)
-delta_phi_deg = 0.3
+delta_phi_deg = 0.012287426944132207
 delta_phi = delta_phi_deg / 180 * np.pi
 # Integration parameters
 N_order = 10
