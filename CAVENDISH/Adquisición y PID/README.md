@@ -73,6 +73,12 @@ Causas típicas si no anda (en orden): **baud** equivocado (usá `--barrer`),
 > Sobre pyvisa: si la fuente es un puerto COM, pyvisa (ASRL) usa pyserial por
 > debajo, así que rara vez cambia el resultado; está como opción por las dudas.
 
+**Confirmado (con pyvisa):** la PPS2320A responde **una línea a cada comando**
+(los `set` devuelven `ok`). Por eso hay que **leer esa respuesta después de cada
+comando** (lockstep); si no, las lecturas salen desfasadas. Ya está resuelto en
+`ActuadorPPS2320A` (`_set`/`_query`) y en `probar_fuente.py`. El formato de
+lectura es en **centésimas de V** (`2121` = 21.21 V).
+
 ---
 
 ## El único archivo de números: `parametros.py`

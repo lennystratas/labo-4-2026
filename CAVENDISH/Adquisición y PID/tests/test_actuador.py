@@ -109,6 +109,67 @@ def test_parsear_tension_invalida_es_nan():
     assert math.isnan(actuador.parsear_tension("sin numeros"))
 
 
+class FakeFuente:
+    """Modela la PPS2320A: CADA comando devuelve UNA linea (los 'set' -> 'ok').
+
+    Reproduce el desfasaje real: si no se lee el 'ok' de cada set, las
+    lecturas salen corridas. Con lockstep (1 lectura por comando) queda OK.
+    """
+
+    def __init__(self):
+        self.cola = []
+        self.preset = {1: 0, 2: 0}   # en centesimas de V
+        self.salida = False
+
+    def escribir(self, texto):
+        if texto[:2] == "su":
+            self.preset[1] = int(texto[2:]); self.cola.append("ok")
+        elif texto[:2] == "sa":
+            self.preset[2] = int(texto[2:]); self.cola.append("ok")
+        elif texto[:2] in ("si", "sd"):
+            self.cola.append("ok")
+        elif texto[:1] == "O":
+            self.salida = (texto == "O1"); self.cola.append("ok")
+        elif texto == "ru":
+            self.cola.append("%04d" % self.preset[1])
+        elif texto == "rk":
+            self.cola.append("%04d" % self.preset[2])
+        elif texto == "rv":
+            self.cola.append("%04d" % (self.preset[1] if self.salida else 0))
+        elif texto == "rh":
+            self.cola.append("%04d" % (self.preset[2] if self.salida else 0))
+        elif texto == "a":
+            self.cola.append("PPS2320A")
+        else:
+            self.cola.append("ok")
+
+    def leer_linea(self):
+        return self.cola.pop(0) if self.cola else ""
+
+    def limpiar(self):
+        self.cola.clear()
+
+    def cerrar(self):
+        pass
+
+
+def test_lockstep_lee_el_bias_tras_init():
+    f = FakeFuente()
+    g = fuerza.Geometria(b=0.05, d=1e-3, n_caps=2)
+    act = actuador.ActuadorPPS2320A(g, 15.0, 30.0, transporte=f)
+    va, vb = act.leer_tensiones()     # init seteo bias 15 V y salida ON
+    assert abs(va - 15.0) < 1e-6 and abs(vb - 15.0) < 1e-6
+
+
+def test_lockstep_aplicar_se_refleja_en_lectura():
+    f = FakeFuente()
+    g = fuerza.Geometria(b=0.05, d=1e-3, n_caps=2)
+    act = actuador.ActuadorPPS2320A(g, 15.0, 30.0, transporte=f)
+    Va, Vb, _ = act.aplicar(0.0)      # u=0 -> ambas en bias
+    va, vb = act.leer_tensiones()
+    assert abs(va - Va) < 1e-6 and abs(vb - Vb) < 1e-6
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(correr(globals()))

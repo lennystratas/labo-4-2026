@@ -88,7 +88,11 @@ def diagnostico(puerto, baud, backend, dtr, rts, espera, vmax):
         return
 
     def cmd(c):
+        # comando de seteo: el equipo responde 'ok' a CADA comando -> hay que
+        # leerlo, si no las lecturas siguientes salen desfasadas (lockstep).
         t.escribir(c)
+        time.sleep(0.15)
+        t.leer_linea()
 
     def q(c, pausa=0.25):
         t.escribir(c)

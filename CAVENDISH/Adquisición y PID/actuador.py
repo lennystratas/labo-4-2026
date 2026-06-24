@@ -149,6 +149,9 @@ class TransporteSerial:
     def leer_linea(self):
         return self.ser.readline().decode("ascii", "replace").strip()
 
+    def limpiar(self):
+        self.ser.reset_input_buffer()
+
     def cerrar(self):
         self.ser.close()
 
@@ -180,6 +183,20 @@ class TransporteVisa:
             return self.inst.read().strip()
         except Exception:
             return ""
+
+    def limpiar(self):
+        # drena cualquier respuesta pendiente con un timeout corto
+        try:
+            viejo = self.inst.timeout
+            self.inst.timeout = 60
+            try:
+                while True:
+                    self.inst.read()
+            except Exception:
+                pass
+            self.inst.timeout = viejo
+        except Exception:
+            pass
 
     def cerrar(self):
         self.inst.close()
@@ -232,20 +249,25 @@ class ActuadorNulo(Actuador):
 # ==========================================================================
 class ActuadorPPS2320A(Actuador):
     r"""
-    Fuente Hantek PPS2320A via puerto serie (USB-serial -> COMx). Necesita
-    pyserial (pip install pyserial). Protocolo (ver helpers de arriba):
-    'su/sa' tension, 'si/sd' corriente, 'O1/O0' salida ON/OFF, terminador '\n'.
+    Fuente Hantek PPS2320A via puerto serie (USB-serial -> COMx) o pyvisa.
+    Protocolo (ver helpers de arriba): 'su/sa' tension, 'si/sd' corriente,
+    'O1/O0' salida ON/OFF, terminador '\n'.
+
+    IMPORTANTE: el equipo responde UNA linea a CADA comando (los 'set'
+    devuelven 'ok'). Por eso despues de cada comando hay que LEER esa linea
+    (lockstep), si no las respuestas se desfasan. Eso hacen _set y _query.
 
     canal_a / canal_b son 1 o 2 (CH1 / CH2). i_limite es el limite de corriente
     por canal (el capacitor casi no consume; un limite chico esta bien).
+    'transporte' permite inyectar uno (para tests); si es None se abre solo.
     """
-    _LECTURA_V = {1: "rv", 2: "rh"}    # tension medida CH1 / CH2
-
+    _LECTURA_V = {1: "rv", 2: "rh"}        # tension medida CH1 / CH2
     _LECTURA_PRESET = {1: "ru", 2: "rk"}   # tension PRESET (lo seteado) CH1 / CH2
 
-    def __init__(self, geom, V_bias, V_max, puerto, baud=9600,
+    def __init__(self, geom, V_bias, V_max, puerto=None, baud=9600,
                  canal_a=1, canal_b=2, i_limite=0.5, i_max=3.1,
-                 V_max_hard=None, backend="serial", dtr=None, rts=None, espera=2.0):
+                 V_max_hard=None, backend="serial", dtr=None, rts=None,
+                 espera=2.0, transporte=None):
         self.geom = geom
         self.V_bias = V_bias
         self.V_max = V_max
@@ -254,31 +276,41 @@ class ActuadorPPS2320A(Actuador):
         self.i_max = i_max
         # tope de seguridad de hardware (por si V_max logico se sube por error)
         self.V_max_hard = V_max_hard if V_max_hard is not None else V_max
-        # capa fisica: 'serial' (pyserial) o 'visa' (pyvisa). Import diferido.
-        self.t = abrir_transporte(puerto, baud, backend, dtr=dtr, rts=rts, espera=espera)
+        # capa fisica: inyectada (tests) o 'serial'/'visa' (import diferido)
+        self.t = (transporte if transporte is not None
+                  else abrir_transporte(puerto, baud, backend, dtr=dtr, rts=rts, espera=espera))
+        if hasattr(self.t, "limpiar"):
+            self.t.limpiar()        # descarta basura/respuestas viejas al arrancar
         # Si los canales NO salen independientes (modo serie/paralelo/trace),
-        # descomenta para forzar modo independiente:  self._cmd("O2")
+        # descomenta para forzar modo independiente:  self._set("O2")
         for canal in (canal_a, canal_b):
-            self._cmd(comando_corriente(canal, i_limite, self.i_max))
-            self._cmd(comando_tension(canal, V_bias, self.V_max_hard))
-        self._cmd("O1")        # salida ON  ('O1' habilita la salida en este equipo)
+            self._set(comando_corriente(canal, i_limite, self.i_max))
+            self._set(comando_tension(canal, V_bias, self.V_max_hard))
+        self._set("O1")        # salida ON  ('O1' habilita la salida en este equipo)
 
-    def _cmd(self, texto):
+    def _set(self, texto):
+        """Comando de seteo: envia y CONSUME la respuesta ('ok') -> mantiene sync."""
         self.t.escribir(texto)
+        self.t.leer_linea()
+
+    def _query(self, texto):
+        """Comando de lectura: envia y DEVUELVE la respuesta."""
+        self.t.escribir(texto)
+        return self.t.leer_linea()
 
     def aplicar(self, u):
         Va, Vb = control_a_tensiones(u, self.geom, self.V_bias, self.V_max)
-        self._cmd(comando_tension(self.canal_a, Va, self.V_max_hard))
-        self._cmd(comando_tension(self.canal_b, Vb, self.V_max_hard))
+        self._set(comando_tension(self.canal_a, Va, self.V_max_hard))
+        self._set(comando_tension(self.canal_b, Vb, self.V_max_hard))
         return Va, Vb, fuerza.fuerza_neta(Va, Vb, self.geom)
 
     def reposo(self):
-        self._cmd(comando_tension(self.canal_a, self.V_bias, self.V_max_hard))
-        self._cmd(comando_tension(self.canal_b, self.V_bias, self.V_max_hard))
+        self._set(comando_tension(self.canal_a, self.V_bias, self.V_max_hard))
+        self._set(comando_tension(self.canal_b, self.V_bias, self.V_max_hard))
 
     def cerrar(self):
         try:
-            self._cmd("O0")    # salida OFF
+            self._set("O0")    # salida OFF
             self.t.cerrar()
         except Exception:
             pass
@@ -286,18 +318,15 @@ class ActuadorPPS2320A(Actuador):
     # ---- diagnostico (opcional) ----
     def modelo(self):
         """Envia 'a' y devuelve el modelo. Sirve para confirmar puerto y baud."""
-        self._cmd("a")
-        return self.t.leer_linea()
+        return self._query("a")
 
     def leer_tension(self, canal):
         """Lee la tension MEDIDA de un canal (texto crudo del equipo)."""
-        self._cmd(self._LECTURA_V[canal])
-        return self.t.leer_linea()
+        return self._query(self._LECTURA_V[canal])
 
     def leer_preset(self, canal):
         """Lee la tension PRESET (la seteada) de un canal -> confirma la escritura."""
-        self._cmd(self._LECTURA_PRESET[canal])
-        return self.t.leer_linea()
+        return self._query(self._LECTURA_PRESET[canal])
 
     def leer_tensiones(self):
         """(V_A, V_B) MEDIDAS en la fuente [V], parseadas. (nan, nan) si falla.
