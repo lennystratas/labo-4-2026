@@ -48,6 +48,33 @@ python fuerza.py --V 25 --b 0.05 --d 1e-3 --brazo 0.03
 
 ---
 
+## Si la fuente no responde — `probar_fuente.py`
+
+**Ojo:** el log muestra la tensión que el PID *pide* (lo que `aplicar()` comanda),
+**no** lo que la fuente confirma. Así que ver "la tensión cambiando" en el log
+**no** prueba que la comunicación ande. Para confirmar de verdad, este script
+**lee de vuelta** de la fuente:
+
+```
+pip install pyserial                       # (una vez)
+python probar_fuente.py                     # lista los puertos COM
+python probar_fuente.py --puerto COM3       # diagnostico: setea y LEE de vuelta
+python probar_fuente.py --puerto COM3 --barrer        # prueba varios bauds
+python probar_fuente.py --puerto COM3 --backend visa  # probar pyvisa (pip install pyvisa pyvisa-py)
+python probar_fuente.py --puerto COM3 --dtr off --rts off
+```
+
+Si `modelo` trae texto y el `preset después` refleja lo seteado → comunicación OK.
+Causas típicas si no anda (en orden): **baud** equivocado (usá `--barrer`),
+**puerto** equivocado, **DTR/RTS** (probá `--dtr off --rts off`), o falta
+`pyserial`. Cuando encuentres lo que funciona, ponelo en `parametros.py`
+(`PUERTO_FUENTE`, `BAUD_FUENTE`, `BACKEND_FUENTE`, `DTR_FUENTE`, `RTS_FUENTE`).
+
+> Sobre pyvisa: si la fuente es un puerto COM, pyvisa (ASRL) usa pyserial por
+> debajo, así que rara vez cambia el resultado; está como opción por las dudas.
+
+---
+
 ## El único archivo de números: `parametros.py`
 
 Ahí cambiás (solo el número después del `=`): geometría de los capacitores

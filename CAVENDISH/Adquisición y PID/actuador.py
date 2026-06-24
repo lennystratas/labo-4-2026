@@ -95,6 +95,88 @@ def comando_corriente(canal, A, a_max):
     return _PREF_I[canal] + codificar_corriente(A, a_max)
 
 
+def com_a_asrl(puerto):
+    """'COM3' -> 'ASRL3::INSTR' (para pyvisa). Si ya es ASRL/otra, lo deja igual."""
+    if puerto.upper().startswith("COM"):
+        return "ASRL%s::INSTR" % puerto[3:]
+    return puerto
+
+
+# ==========================================================================
+# Transportes: la capa fisica (abrir / escribir / leer / cerrar). Hay dos,
+# para poder probar pyserial y pyvisa con EXACTAMENTE el mismo protocolo.
+# Ambos terminan los comandos en '\n' (0x0a).
+# ==========================================================================
+class TransporteSerial:
+    """Puerto serie via pyserial. Permite forzar DTR/RTS y esperar tras abrir
+    (algunos USB-serial resetean el equipo al abrir el puerto)."""
+
+    def __init__(self, puerto, baud=9600, dtr=None, rts=None, espera=2.0, timeout=1.0):
+        import time
+        import serial  # pyserial (pip install pyserial)
+        self.ser = serial.Serial()
+        self.ser.port = puerto
+        self.ser.baudrate = baud
+        self.ser.timeout = timeout
+        if dtr is not None:
+            self.ser.dtr = dtr          # algunos equipos necesitan DTR en 0
+        if rts is not None:
+            self.ser.rts = rts
+        self.ser.open()
+        if espera > 0:
+            time.sleep(espera)          # darle tiempo a que arranque
+        self.ser.reset_input_buffer()
+
+    def escribir(self, texto):
+        self.ser.write((texto + "\n").encode("ascii"))
+
+    def leer_linea(self):
+        return self.ser.readline().decode("ascii", "replace").strip()
+
+    def cerrar(self):
+        self.ser.close()
+
+
+class TransporteVisa:
+    """Mismo protocolo pero por pyvisa (backend pyvisa-py para no depender de
+    NI-VISA). Para un COM, pasar 'ASRL<n>::INSTR' (ver com_a_asrl)."""
+
+    def __init__(self, recurso, baud=9600, timeout=1000):
+        import pyvisa  # pip install pyvisa pyvisa-py
+        try:
+            self.rm = pyvisa.ResourceManager("@py")
+        except Exception:
+            self.rm = pyvisa.ResourceManager()      # cae al backend por defecto
+        self.inst = self.rm.open_resource(recurso)
+        try:
+            self.inst.baud_rate = baud
+        except Exception:
+            pass
+        self.inst.timeout = timeout
+        self.inst.write_termination = "\n"
+        self.inst.read_termination = "\n"
+
+    def escribir(self, texto):
+        self.inst.write(texto)
+
+    def leer_linea(self):
+        try:
+            return self.inst.read().strip()
+        except Exception:
+            return ""
+
+    def cerrar(self):
+        self.inst.close()
+
+
+def abrir_transporte(puerto, baud=9600, backend="serial",
+                     dtr=None, rts=None, espera=2.0):
+    """Crea el transporte segun backend ('serial' o 'visa')."""
+    if backend == "visa":
+        return TransporteVisa(com_a_asrl(puerto), baud)
+    return TransporteSerial(puerto, baud, dtr=dtr, rts=rts, espera=espera)
+
+
 # ==========================================================================
 # Interfaz comun
 # ==========================================================================
@@ -143,10 +225,11 @@ class ActuadorPPS2320A(Actuador):
     """
     _LECTURA_V = {1: "rv", 2: "rh"}    # tension medida CH1 / CH2
 
+    _LECTURA_PRESET = {1: "ru", 2: "rk"}   # tension PRESET (lo seteado) CH1 / CH2
+
     def __init__(self, geom, V_bias, V_max, puerto, baud=9600,
                  canal_a=1, canal_b=2, i_limite=0.5, i_max=3.1,
-                 V_max_hard=None, timeout=1.0):
-        import serial  # pyserial, import diferido (solo con hardware real)
+                 V_max_hard=None, backend="serial", dtr=None, rts=None, espera=2.0):
         self.geom = geom
         self.V_bias = V_bias
         self.V_max = V_max
@@ -155,7 +238,8 @@ class ActuadorPPS2320A(Actuador):
         self.i_max = i_max
         # tope de seguridad de hardware (por si V_max logico se sube por error)
         self.V_max_hard = V_max_hard if V_max_hard is not None else V_max
-        self.ser = serial.Serial(puerto, baud, timeout=timeout)
+        # capa fisica: 'serial' (pyserial) o 'visa' (pyvisa). Import diferido.
+        self.t = abrir_transporte(puerto, baud, backend, dtr=dtr, rts=rts, espera=espera)
         # Si los canales NO salen independientes (modo serie/paralelo/trace),
         # descomenta para forzar modo independiente:  self._cmd("O2")
         for canal in (canal_a, canal_b):
@@ -164,7 +248,7 @@ class ActuadorPPS2320A(Actuador):
         self._cmd("O1")        # salida ON  ('O1' habilita la salida en este equipo)
 
     def _cmd(self, texto):
-        self.ser.write((texto + "\n").encode("ascii"))    # 0x0a como terminador
+        self.t.escribir(texto)
 
     def aplicar(self, u):
         Va, Vb = control_a_tensiones(u, self.geom, self.V_bias, self.V_max)
@@ -179,7 +263,7 @@ class ActuadorPPS2320A(Actuador):
     def cerrar(self):
         try:
             self._cmd("O0")    # salida OFF
-            self.ser.close()
+            self.t.cerrar()
         except Exception:
             pass
 
@@ -187,9 +271,14 @@ class ActuadorPPS2320A(Actuador):
     def modelo(self):
         """Envia 'a' y devuelve el modelo. Sirve para confirmar puerto y baud."""
         self._cmd("a")
-        return self.ser.readline().decode("ascii", "replace").strip()
+        return self.t.leer_linea()
 
     def leer_tension(self, canal):
-        """Lee la tension medida de un canal (texto crudo del equipo)."""
+        """Lee la tension MEDIDA de un canal (texto crudo del equipo)."""
         self._cmd(self._LECTURA_V[canal])
-        return self.ser.readline().decode("ascii", "replace").strip()
+        return self.t.leer_linea()
+
+    def leer_preset(self, canal):
+        """Lee la tension PRESET (la seteada) de un canal -> confirma la escritura."""
+        self._cmd(self._LECTURA_PRESET[canal])
+        return self.t.leer_linea()

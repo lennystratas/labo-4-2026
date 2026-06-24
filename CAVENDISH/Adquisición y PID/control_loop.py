@@ -166,7 +166,10 @@ def main(argv=None):
     else:
         act = actuador_mod.ActuadorPPS2320A(geom, P.V_BIAS, P.V_MAX,
                                             P.PUERTO_FUENTE, P.BAUD_FUENTE,
-                                            P.CANAL_A, P.CANAL_B, P.I_LIMITE)
+                                            P.CANAL_A, P.CANAL_B, P.I_LIMITE,
+                                            backend=P.BACKEND_FUENTE,
+                                            dtr=P.DTR_FUENTE, rts=P.RTS_FUENTE,
+                                            espera=P.ESPERA_FUENTE)
         try:
             print("Fuente conectada. Modelo:", act.modelo())
         except Exception as e:

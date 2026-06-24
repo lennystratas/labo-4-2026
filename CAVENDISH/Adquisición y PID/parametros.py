@@ -45,6 +45,12 @@ CANAL_A = 1       # CH1 -> empuja en + (sus 2 capacitores)
 CANAL_B = 2       # CH2 -> empuja en - (sus 2 capacitores)
 I_LIMITE = 0.5    # limite de corriente por canal [A] (el capacitor casi no consume)
 
+# Comunicacion (usa probar_fuente.py para encontrar lo que funciona):
+BACKEND_FUENTE = "serial"   # "serial" (pyserial) o "visa" (pyvisa + pyvisa-py)
+DTR_FUENTE = None           # None / True / False (si el equipo necesita DTR en cierto estado)
+RTS_FUENTE = None           # None / True / False
+ESPERA_FUENTE = 2.0         # segundos de espera tras abrir el puerto (reset del equipo)
+
 
 # ---------------------------------------------------------------------
 #  PID   (la salida es un comando en [-1, 1] = fraccion de la fuerza maxima)

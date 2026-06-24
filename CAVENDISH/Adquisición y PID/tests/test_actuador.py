@@ -85,6 +85,15 @@ def test_comando_corriente_por_canal():
     assert actuador.comando_corriente(2, 0.5, 3.1) == "sd0500"   # CH2, 0.500 A
 
 
+def test_com_a_asrl_convierte_puerto_com():
+    assert actuador.com_a_asrl("COM3") == "ASRL3::INSTR"
+    assert actuador.com_a_asrl("COM12") == "ASRL12::INSTR"
+
+
+def test_com_a_asrl_deja_pasar_asrl_directo():
+    assert actuador.com_a_asrl("ASRL5::INSTR") == "ASRL5::INSTR"
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(correr(globals()))
