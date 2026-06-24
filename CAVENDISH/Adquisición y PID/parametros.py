@@ -50,6 +50,9 @@ BACKEND_FUENTE = "serial"   # "serial" (pyserial) o "visa" (pyvisa + pyvisa-py)
 DTR_FUENTE = None           # None / True / False (si el equipo necesita DTR en cierto estado)
 RTS_FUENTE = None           # None / True / False
 ESPERA_FUENTE = 2.0         # segundos de espera tras abrir el puerto (reset del equipo)
+LEER_TENSION_REAL = True    # registrar la tension MEDIDA en la fuente (columnas V_A_leido/V_B_leido)
+                            # cuesta 2 lecturas serie por vuelta; el pendulo es lento, se banca.
+                            # Poné False si querés el lazo lo mas rapido posible.
 
 
 # ---------------------------------------------------------------------

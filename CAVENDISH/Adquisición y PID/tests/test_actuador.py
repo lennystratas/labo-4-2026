@@ -94,6 +94,21 @@ def test_com_a_asrl_deja_pasar_asrl_directo():
     assert actuador.com_a_asrl("ASRL5::INSTR") == "ASRL5::INSTR"
 
 
+def test_parsear_tension_decimal():
+    assert abs(actuador.parsear_tension("12.00") - 12.00) < 1e-9
+    assert abs(actuador.parsear_tension("5.00V") - 5.00) < 1e-9   # ignora unidades
+
+
+def test_parsear_tension_en_centesimas():
+    assert abs(actuador.parsear_tension("1200") - 12.00) < 1e-9   # sin punto -> centesimas
+
+
+def test_parsear_tension_invalida_es_nan():
+    import math
+    assert math.isnan(actuador.parsear_tension(""))
+    assert math.isnan(actuador.parsear_tension("sin numeros"))
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(correr(globals()))

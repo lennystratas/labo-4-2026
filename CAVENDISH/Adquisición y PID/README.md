@@ -97,11 +97,14 @@ poné `0.5` si tu cátedra usa la convención con ½. El par push-pull da
 `Datos/medicionNN/medicionNN_nnnn.txt` (tab-separated, encabezado comentado con `#`):
 
 ```
-t_s  x_mm  y_mm  valido  setpoint_mm  error_mm  cmd  V_A  V_B  F_neta_N
+t_s  x_mm  y_mm  valido  setpoint_mm  error_mm  cmd  V_A  V_B  F_neta_N  V_A_leido  V_B_leido
 ```
 
 Las 3 primeras columnas siguen el formato viejo (compatibles con los análisis
 existentes). `F_neta_N` es la fuerza de control: **la medición del experimento.**
+`V_A`/`V_B` son las tensiones **comandadas**; `V_A_leido`/`V_B_leido` son las
+**medidas en la fuente** (confirman el hardware; quedan `nan` si `LEER_TENSION_REAL=False`
+en `parametros.py`, o si la lectura falla).
 
 ---
 

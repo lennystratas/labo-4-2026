@@ -22,6 +22,8 @@ optimo para rango simetrico es V_bias = V_max/raiz(2).
 
 La salida del PID (u) se interpreta como FUERZA NETA pedida [N].
 """
+import re
+
 import fuerza
 
 
@@ -100,6 +102,20 @@ def com_a_asrl(puerto):
     if puerto.upper().startswith("COM"):
         return "ASRL%s::INSTR" % puerto[3:]
     return puerto
+
+
+def parsear_tension(respuesta):
+    """Respuesta de lectura del equipo -> Volts (float). NaN si no se puede.
+
+    Heuristica (AJUSTAR segun lo que muestre probar_fuente.py):
+      - si la respuesta trae punto, se toma directo en V:  '12.00' -> 12.00
+      - si son solo digitos, se asume en centesimas:       '1200'  -> 12.00
+    """
+    m = re.search(r"-?\d+\.?\d*", respuesta or "")
+    if not m:
+        return float("nan")
+    num = m.group(0)
+    return float(num) if "." in num else int(num) / 100.0
 
 
 # ==========================================================================
@@ -282,3 +298,15 @@ class ActuadorPPS2320A(Actuador):
         """Lee la tension PRESET (la seteada) de un canal -> confirma la escritura."""
         self._cmd(self._LECTURA_PRESET[canal])
         return self.t.leer_linea()
+
+    def leer_tensiones(self):
+        """(V_A, V_B) MEDIDAS en la fuente [V], parseadas. (nan, nan) si falla.
+
+        Lo usa el lazo para registrar la tension REAL (no solo la comandada).
+        """
+        try:
+            va = parsear_tension(self.leer_tension(self.canal_a))
+            vb = parsear_tension(self.leer_tension(self.canal_b))
+            return va, vb
+        except Exception:
+            return float("nan"), float("nan")
