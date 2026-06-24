@@ -162,10 +162,15 @@ def main(argv=None):
 
     if a.sin_fuentes:
         act = actuador_mod.ActuadorNulo(P.V_BIAS)
-        print("[modo solo-medir] sin fuentes SCPI")
+        print("[modo solo-medir] sin fuente")
     else:
-        act = actuador_mod.ActuadorSCPI(geom, P.V_BIAS, P.V_MAX,
-                                        P.RECURSO_FUENTE_A, P.RECURSO_FUENTE_B)
+        act = actuador_mod.ActuadorPPS2320A(geom, P.V_BIAS, P.V_MAX,
+                                            P.PUERTO_FUENTE, P.BAUD_FUENTE,
+                                            P.CANAL_A, P.CANAL_B, P.I_LIMITE)
+        try:
+            print("Fuente conectada. Modelo:", act.modelo())
+        except Exception as e:
+            print("Aviso: no pude leer el modelo (revisa puerto/baud):", e)
 
     pid = PID(P.KP, P.KI, P.KD, setpoint=P.SETPOINT_MM,
               salida_min=-1.0, salida_max=1.0, tau_deriv=P.TAU_DERIV)

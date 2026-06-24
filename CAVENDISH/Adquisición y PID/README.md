@@ -1,9 +1,9 @@
 # Adquisición y PID — Cavendish con realimentación electrostática
 
 Mantiene el péndulo de torsión **quieto en el nulo** con un PID que comanda
-**2 fuentes de tensión** (cada una alimenta 2 capacitores que actúan juntos).
-La **fuerza de control** necesaria para tenerlo quieto *es la medición*: al
-acercar la masa, cambia esa fuerza.
+**2 canales de una fuente de tensión** (cada canal alimenta 2 capacitores que
+actúan juntos; también sirven 2 fuentes separadas). La **fuerza de control**
+necesaria para tenerlo quieto *es la medición*: al acercar la masa, cambia.
 
 La posición se mide por **palanca óptica**: una cámara filma el spot del láser
 y se calcula su **centroide** (sin asumir forma del spot).
@@ -18,9 +18,10 @@ cámara → centroide → PID → fuerza pedida → 2 tensiones → (se registra
 
 Todo lo que se instala extra (solo para el hardware real):
 ```
-pip install pyvisa
+pip install pyserial
 ```
-(`numpy`, `opencv` y `matplotlib` ya están.)
+(`numpy`, `opencv` y `matplotlib` ya están.) La fuente es una **Hantek PPS2320A**
+por puerto serie (USB), usando sus **2 canales** (CH1, CH2) como las 2 fuentes.
 
 **1) Calibrar (solo clicks):**
 ```
@@ -96,10 +97,13 @@ y la escala de fuerza son distintos, así que reajustá:
 ## Para MAÑANA en el laboratorio (checklist)
 
 - [ ] `parametros.py`: cargar **geometría real** (`b`, `d`, `BRAZO`) y `V_MAX`, `V_BIAS`.
-- [ ] `parametros.py`: poner las direcciones VISA (`RECURSO_FUENTE_A/B`). Para listarlas:
-      `python -c "import pyvisa; print(pyvisa.ResourceManager().list_resources())"`
-- [ ] `actuador.py` → clase `ActuadorSCPI`: confirmar los **comandos SCPI** de tus
-      fuentes (están marcados con `TODO`: `VOLT`, `OUTP ON/OFF`, `*RST`).
+- [ ] `parametros.py`: poner el **puerto** (`PUERTO_FUENTE`, p.ej. `COM3`) y el
+      **baud** (`BAUD_FUENTE`). Para ver los puertos:
+      `python -m serial.tools.list_ports`
+- [ ] Confirmar el baud: al correr `control_loop.py` imprime el **modelo** de la
+      fuente (comando `a`). Si sale vacío/basura, probá `BAUD_FUENTE` = 2400 / 4800 / 115200.
+- [ ] Verificar que la salida prende: el equipo usa `O1` (ON) / `O0` (OFF). Si los
+      canales no salen independientes, descomentá `self._cmd("O2")` en `ActuadorPPS2320A`.
 - [ ] `python calibracion.py` con la cámara real.
 - [ ] `python control_loop.py --sin-fuentes` para chequear la medición antes de actuar.
 - [ ] Reajustar el PID (ver arriba).

@@ -57,6 +57,34 @@ def test_bias_mayor_que_vmax_es_error():
     assert False, "V_bias > V_max deberia lanzar ValueError"
 
 
+# ---- protocolo Hantek PPS2320A (2 canales = CH1 y CH2) ----
+def test_tension_segura_clampea():
+    assert actuador.tension_segura(999.0, 30.0) == 30.0   # tope superior
+    assert actuador.tension_segura(-5.0, 30.0) == 0.0     # nunca negativa
+    assert actuador.tension_segura(15.0, 30.0) == 15.0    # adentro, sin tocar
+
+
+def test_codificar_tension_en_centesimas():
+    assert actuador.codificar_tension(12.0, 30.0) == "1200"   # 12.00 V
+    assert actuador.codificar_tension(5.0, 30.0) == "0500"
+    assert actuador.codificar_tension(21.2, 30.0) == "2120"
+    assert actuador.codificar_tension(0.0, 30.0) == "0000"
+
+
+def test_codificar_tension_clampea_a_vmax():
+    assert actuador.codificar_tension(99.0, 30.0) == "3000"   # clamp a 30.00 V
+
+
+def test_comando_tension_por_canal():
+    assert actuador.comando_tension(1, 12.0, 30.0) == "su1200"   # CH1
+    assert actuador.comando_tension(2, 5.0, 30.0) == "sa0500"    # CH2
+
+
+def test_comando_corriente_por_canal():
+    assert actuador.comando_corriente(1, 2.5, 3.1) == "si2500"   # CH1, 2.500 A
+    assert actuador.comando_corriente(2, 0.5, 3.1) == "sd0500"   # CH2, 0.500 A
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(correr(globals()))

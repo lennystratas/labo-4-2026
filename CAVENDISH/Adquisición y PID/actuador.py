@@ -2,7 +2,8 @@
 Actuador: convierte la accion de control en tensiones de las 2 fuentes.
 ====================================================================
 
-Hay 2 fuentes (A y B), cada una alimenta sus 2 capacitores (que actuan
+Hay 2 canales (A y B) -- pueden ser 2 canales de una misma fuente (lo usual)
+o 2 fuentes separadas. Cada canal alimenta sus 2 capacitores (que actuan
 juntos). La fuerza de cada canal es ~ V^2 y SIEMPRE atractiva, asi que para
 tener control bidireccional se usa un par push-pull:
 
@@ -57,6 +58,44 @@ def control_a_tensiones(u, geom, V_bias, V_max):
 
 
 # ==========================================================================
+# Protocolo de la fuente Hantek PPS2320A (puros y testeables).
+#   - cada comando termina en 0x0a ('\n')
+#   - tension : 'su'/'sa' (CH1/CH2) + 4 digitos en CENTESIMAS de V (1200=12.00V)
+#   - corriente: 'si'/'sd' (CH1/CH2) + 4 digitos en MILESIMAS de A (2500=2.500A)
+#   - salida  : 'O1' = ON , 'O0' = OFF
+# ==========================================================================
+_PREF_V = {1: "su", 2: "sa"}    # prefijo de tension   CH1 / CH2
+_PREF_I = {1: "si", 2: "sd"}    # prefijo de corriente CH1 / CH2
+
+
+def tension_segura(V, v_max_hard):
+    """Clampea la tension a [0, v_max_hard]. Nunca deja pasar algo peligroso."""
+    return min(max(V, 0.0), v_max_hard)
+
+
+def codificar_tension(V, v_max_hard):
+    """V [V] -> 4 digitos en centesimas (con clamp).  12.00 V -> '1200'."""
+    centi = int(round(tension_segura(V, v_max_hard) * 100))
+    return "%04d" % max(0, min(centi, 9999))
+
+
+def codificar_corriente(A, a_max):
+    """A [A] -> 4 digitos en milesimas (con clamp).  2.500 A -> '2500'."""
+    mili = int(round(min(max(A, 0.0), a_max) * 1000))
+    return "%04d" % max(0, min(mili, 9999))
+
+
+def comando_tension(canal, V, v_max_hard):
+    """Comando para fijar la tension de un canal. CH1->'su....', CH2->'sa....'."""
+    return _PREF_V[canal] + codificar_tension(V, v_max_hard)
+
+
+def comando_corriente(canal, A, a_max):
+    """Comando para fijar el limite de corriente de un canal."""
+    return _PREF_I[canal] + codificar_corriente(A, a_max)
+
+
+# ==========================================================================
 # Interfaz comun
 # ==========================================================================
 class Actuador:
@@ -90,54 +129,67 @@ class ActuadorNulo(Actuador):
 
 
 # ==========================================================================
-# Fuente programable real por SCPI/VISA  (esqueleto - completar manana)
+# Fuente real: Hantek PPS2320A por puerto serie (pyserial). Usa sus 2 canales
+# (CH1, CH2) como las 2 'fuentes' del par push-pull.
 # ==========================================================================
-class ActuadorSCPI(Actuador):
-    """
-    Dos fuentes de banco programables por VISA (pyvisa). Es un ESQUELETO:
-    los comandos SCPI exactos dependen del modelo de fuente -> se confirman
-    cuando este el equipo (estan marcados con TODO).
-    """
+class ActuadorPPS2320A(Actuador):
+    r"""
+    Fuente Hantek PPS2320A via puerto serie (USB-serial -> COMx). Necesita
+    pyserial (pip install pyserial). Protocolo (ver helpers de arriba):
+    'su/sa' tension, 'si/sd' corriente, 'O1/O0' salida ON/OFF, terminador '\n'.
 
-    def __init__(self, geom, V_bias, V_max, recurso_a, recurso_b,
-                 V_max_hard=None):
-        import pyvisa  # import diferido (solo hace falta con hardware real)
+    canal_a / canal_b son 1 o 2 (CH1 / CH2). i_limite es el limite de corriente
+    por canal (el capacitor casi no consume; un limite chico esta bien).
+    """
+    _LECTURA_V = {1: "rv", 2: "rh"}    # tension medida CH1 / CH2
+
+    def __init__(self, geom, V_bias, V_max, puerto, baud=9600,
+                 canal_a=1, canal_b=2, i_limite=0.5, i_max=3.1,
+                 V_max_hard=None, timeout=1.0):
+        import serial  # pyserial, import diferido (solo con hardware real)
         self.geom = geom
         self.V_bias = V_bias
         self.V_max = V_max
+        self.canal_a = canal_a
+        self.canal_b = canal_b
+        self.i_max = i_max
         # tope de seguridad de hardware (por si V_max logico se sube por error)
         self.V_max_hard = V_max_hard if V_max_hard is not None else V_max
-        self._rm = pyvisa.ResourceManager()
-        self.fa = self._rm.open_resource(recurso_a)
-        self.fb = self._rm.open_resource(recurso_b)
-        self._init_fuente(self.fa)
-        self._init_fuente(self.fb)
+        self.ser = serial.Serial(puerto, baud, timeout=timeout)
+        # Si los canales NO salen independientes (modo serie/paralelo/trace),
+        # descomenta para forzar modo independiente:  self._cmd("O2")
+        for canal in (canal_a, canal_b):
+            self._cmd(comando_corriente(canal, i_limite, self.i_max))
+            self._cmd(comando_tension(canal, V_bias, self.V_max_hard))
+        self._cmd("O1")        # salida ON  ('O1' habilita la salida en este equipo)
 
-    def _init_fuente(self, f):
-        # TODO(lab): ajustar a los comandos de TU fuente
-        f.write("*RST")
-        f.write("VOLT %.4f" % self.V_bias)
-        f.write("OUTP ON")
-
-    def _set_tension(self, f, V):
-        V = min(max(V, 0.0), self.V_max_hard)     # nunca pasar el tope duro
-        # TODO(lab): ajustar a los comandos de TU fuente
-        f.write("VOLT %.4f" % V)
+    def _cmd(self, texto):
+        self.ser.write((texto + "\n").encode("ascii"))    # 0x0a como terminador
 
     def aplicar(self, u):
         Va, Vb = control_a_tensiones(u, self.geom, self.V_bias, self.V_max)
-        self._set_tension(self.fa, Va)
-        self._set_tension(self.fb, Vb)
+        self._cmd(comando_tension(self.canal_a, Va, self.V_max_hard))
+        self._cmd(comando_tension(self.canal_b, Vb, self.V_max_hard))
         return Va, Vb, fuerza.fuerza_neta(Va, Vb, self.geom)
 
     def reposo(self):
-        self._set_tension(self.fa, self.V_bias)
-        self._set_tension(self.fb, self.V_bias)
+        self._cmd(comando_tension(self.canal_a, self.V_bias, self.V_max_hard))
+        self._cmd(comando_tension(self.canal_b, self.V_bias, self.V_max_hard))
 
     def cerrar(self):
         try:
-            for f in (self.fa, self.fb):
-                f.write("OUTP OFF")   # TODO(lab): ajustar
-                f.close()
+            self._cmd("O0")    # salida OFF
+            self.ser.close()
         except Exception:
             pass
+
+    # ---- diagnostico (opcional) ----
+    def modelo(self):
+        """Envia 'a' y devuelve el modelo. Sirve para confirmar puerto y baud."""
+        self._cmd("a")
+        return self.ser.readline().decode("ascii", "replace").strip()
+
+    def leer_tension(self, canal):
+        """Lee la tension medida de un canal (texto crudo del equipo)."""
+        self._cmd(self._LECTURA_V[canal])
+        return self.ser.readline().decode("ascii", "replace").strip()
