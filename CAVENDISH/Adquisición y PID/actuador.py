@@ -2,7 +2,8 @@
 Actuador: convierte la accion de control en tensiones de las 2 fuentes.
 ====================================================================
 
-Hay 2 fuentes (A y B), cada una alimenta sus 2 capacitores (que actuan
+Hay 2 canales (A y B) -- pueden ser 2 canales de una misma fuente (lo usual)
+o 2 fuentes separadas. Cada canal alimenta sus 2 capacitores (que actuan
 juntos). La fuerza de cada canal es ~ V^2 y SIEMPRE atractiva, asi que para
 tener control bidireccional se usa un par push-pull:
 
@@ -21,6 +22,8 @@ optimo para rango simetrico es V_bias = V_max/raiz(2).
 
 La salida del PID (u) se interpreta como FUERZA NETA pedida [N].
 """
+import re
+
 import fuerza
 
 
@@ -57,6 +60,157 @@ def control_a_tensiones(u, geom, V_bias, V_max):
 
 
 # ==========================================================================
+# Protocolo de la fuente Hantek PPS2320A (puros y testeables).
+#   - cada comando termina en 0x0a ('\n')
+#   - tension : 'su'/'sa' (CH1/CH2) + 4 digitos en CENTESIMAS de V (1200=12.00V)
+#   - corriente: 'si'/'sd' (CH1/CH2) + 4 digitos en MILESIMAS de A (2500=2.500A)
+#   - salida  : 'O1' = ON , 'O0' = OFF
+# ==========================================================================
+_PREF_V = {1: "su", 2: "sa"}    # prefijo de tension   CH1 / CH2
+_PREF_I = {1: "si", 2: "sd"}    # prefijo de corriente CH1 / CH2
+
+
+def tension_segura(V, v_max_hard):
+    """Clampea la tension a [0, v_max_hard]. Nunca deja pasar algo peligroso."""
+    return min(max(V, 0.0), v_max_hard)
+
+
+def codificar_tension(V, v_max_hard):
+    """V [V] -> 4 digitos en centesimas (con clamp).  12.00 V -> '1200'."""
+    centi = int(round(tension_segura(V, v_max_hard) * 100))
+    return "%04d" % max(0, min(centi, 9999))
+
+
+def codificar_corriente(A, a_max):
+    """A [A] -> 4 digitos en milesimas (con clamp).  2.500 A -> '2500'."""
+    mili = int(round(min(max(A, 0.0), a_max) * 1000))
+    return "%04d" % max(0, min(mili, 9999))
+
+
+def comando_tension(canal, V, v_max_hard):
+    """Comando para fijar la tension de un canal. CH1->'su....', CH2->'sa....'."""
+    return _PREF_V[canal] + codificar_tension(V, v_max_hard)
+
+
+def comando_corriente(canal, A, a_max):
+    """Comando para fijar el limite de corriente de un canal."""
+    return _PREF_I[canal] + codificar_corriente(A, a_max)
+
+
+def com_a_asrl(puerto):
+    """'COM3' -> 'ASRL3::INSTR' (para pyvisa). Si ya es ASRL/otra, lo deja igual."""
+    if puerto.upper().startswith("COM"):
+        return "ASRL%s::INSTR" % puerto[3:]
+    return puerto
+
+
+def parsear_tension(respuesta):
+    """Respuesta de lectura del equipo -> Volts (float). NaN si no se puede.
+
+    Heuristica (AJUSTAR segun lo que muestre probar_fuente.py):
+      - si la respuesta trae punto, se toma directo en V:  '12.00' -> 12.00
+      - si son solo digitos, se asume en centesimas:       '1200'  -> 12.00
+    """
+    m = re.search(r"-?\d+\.?\d*", respuesta or "")
+    if not m:
+        return float("nan")
+    num = m.group(0)
+    return float(num) if "." in num else int(num) / 100.0
+
+
+# ==========================================================================
+# Transportes: la capa fisica (abrir / escribir / leer / cerrar). Hay dos,
+# para poder probar pyserial y pyvisa con EXACTAMENTE el mismo protocolo.
+# Ambos terminan los comandos en '\n' (0x0a).
+# ==========================================================================
+class TransporteSerial:
+    """Puerto serie via pyserial. Permite forzar DTR/RTS y esperar tras abrir
+    (algunos USB-serial resetean el equipo al abrir el puerto)."""
+
+    def __init__(self, puerto, baud=9600, dtr=None, rts=None, espera=2.0, timeout=1.0):
+        import time
+        import serial  # pyserial (pip install pyserial)
+        self.ser = serial.Serial()
+        self.ser.port = puerto
+        self.ser.baudrate = baud
+        self.ser.timeout = timeout
+        if dtr is not None:
+            self.ser.dtr = dtr          # algunos equipos necesitan DTR en 0
+        if rts is not None:
+            self.ser.rts = rts
+        self.ser.open()
+        if espera > 0:
+            time.sleep(espera)          # darle tiempo a que arranque
+        self.ser.reset_input_buffer()
+
+    def escribir(self, texto):
+        self.ser.write((texto + "\n").encode("ascii"))
+
+    def leer_linea(self):
+        return self.ser.readline().decode("ascii", "replace").strip()
+
+    def limpiar(self):
+        self.ser.reset_input_buffer()
+
+    def cerrar(self):
+        self.ser.close()
+
+
+class TransporteVisa:
+    """Mismo protocolo pero por pyvisa (backend pyvisa-py para no depender de
+    NI-VISA). Para un COM, pasar 'ASRL<n>::INSTR' (ver com_a_asrl)."""
+
+    def __init__(self, recurso, baud=9600, timeout=1000):
+        import pyvisa  # pip install pyvisa pyvisa-py
+        try:
+            self.rm = pyvisa.ResourceManager("@py")
+        except Exception:
+            self.rm = pyvisa.ResourceManager()      # cae al backend por defecto
+        self.inst = self.rm.open_resource(recurso)
+        try:
+            self.inst.baud_rate = baud
+        except Exception:
+            pass
+        self.inst.timeout = timeout
+        self.inst.write_termination = "\n"
+        self.inst.read_termination = "\n"
+
+    def escribir(self, texto):
+        self.inst.write(texto)
+
+    def leer_linea(self):
+        try:
+            return self.inst.read().strip()
+        except Exception:
+            return ""
+
+    def limpiar(self):
+        # drena cualquier respuesta pendiente con un timeout corto
+        try:
+            viejo = self.inst.timeout
+            self.inst.timeout = 60
+            try:
+                while True:
+                    self.inst.read()
+            except Exception:
+                pass
+            self.inst.timeout = viejo
+        except Exception:
+            pass
+
+    def cerrar(self):
+        self.inst.close()
+
+
+def abrir_transporte(puerto, baud=9600, backend="serial",
+                     dtr=None, rts=None, espera=2.0):
+    """Crea el transporte segun backend ('serial' o 'visa')."""
+    if backend == "visa":
+        return TransporteVisa(com_a_asrl(puerto), baud)
+    return TransporteSerial(puerto, baud, dtr=dtr, rts=rts, espera=espera)
+
+
+# ==========================================================================
 # Interfaz comun
 # ==========================================================================
 class Actuador:
@@ -90,54 +244,98 @@ class ActuadorNulo(Actuador):
 
 
 # ==========================================================================
-# Fuente programable real por SCPI/VISA  (esqueleto - completar manana)
+# Fuente real: Hantek PPS2320A por puerto serie (pyserial). Usa sus 2 canales
+# (CH1, CH2) como las 2 'fuentes' del par push-pull.
 # ==========================================================================
-class ActuadorSCPI(Actuador):
-    """
-    Dos fuentes de banco programables por VISA (pyvisa). Es un ESQUELETO:
-    los comandos SCPI exactos dependen del modelo de fuente -> se confirman
-    cuando este el equipo (estan marcados con TODO).
-    """
+class ActuadorPPS2320A(Actuador):
+    r"""
+    Fuente Hantek PPS2320A via puerto serie (USB-serial -> COMx) o pyvisa.
+    Protocolo (ver helpers de arriba): 'su/sa' tension, 'si/sd' corriente,
+    'O1/O0' salida ON/OFF, terminador '\n'.
 
-    def __init__(self, geom, V_bias, V_max, recurso_a, recurso_b,
-                 V_max_hard=None):
-        import pyvisa  # import diferido (solo hace falta con hardware real)
+    IMPORTANTE: el equipo responde UNA linea a CADA comando (los 'set'
+    devuelven 'ok'). Por eso despues de cada comando hay que LEER esa linea
+    (lockstep), si no las respuestas se desfasan. Eso hacen _set y _query.
+
+    canal_a / canal_b son 1 o 2 (CH1 / CH2). i_limite es el limite de corriente
+    por canal (el capacitor casi no consume; un limite chico esta bien).
+    'transporte' permite inyectar uno (para tests); si es None se abre solo.
+    """
+    _LECTURA_V = {1: "rv", 2: "rh"}        # tension medida CH1 / CH2
+    _LECTURA_PRESET = {1: "ru", 2: "rk"}   # tension PRESET (lo seteado) CH1 / CH2
+
+    def __init__(self, geom, V_bias, V_max, puerto=None, baud=9600,
+                 canal_a=1, canal_b=2, i_limite=0.5, i_max=3.1,
+                 V_max_hard=None, backend="serial", dtr=None, rts=None,
+                 espera=2.0, transporte=None):
         self.geom = geom
         self.V_bias = V_bias
         self.V_max = V_max
+        self.canal_a = canal_a
+        self.canal_b = canal_b
+        self.i_max = i_max
         # tope de seguridad de hardware (por si V_max logico se sube por error)
         self.V_max_hard = V_max_hard if V_max_hard is not None else V_max
-        self._rm = pyvisa.ResourceManager()
-        self.fa = self._rm.open_resource(recurso_a)
-        self.fb = self._rm.open_resource(recurso_b)
-        self._init_fuente(self.fa)
-        self._init_fuente(self.fb)
+        # capa fisica: inyectada (tests) o 'serial'/'visa' (import diferido)
+        self.t = (transporte if transporte is not None
+                  else abrir_transporte(puerto, baud, backend, dtr=dtr, rts=rts, espera=espera))
+        if hasattr(self.t, "limpiar"):
+            self.t.limpiar()        # descarta basura/respuestas viejas al arrancar
+        # Si los canales NO salen independientes (modo serie/paralelo/trace),
+        # descomenta para forzar modo independiente:  self._set("O2")
+        for canal in (canal_a, canal_b):
+            self._set(comando_corriente(canal, i_limite, self.i_max))
+            self._set(comando_tension(canal, V_bias, self.V_max_hard))
+        self._set("O1")        # salida ON  ('O1' habilita la salida en este equipo)
 
-    def _init_fuente(self, f):
-        # TODO(lab): ajustar a los comandos de TU fuente
-        f.write("*RST")
-        f.write("VOLT %.4f" % self.V_bias)
-        f.write("OUTP ON")
+    def _set(self, texto):
+        """Comando de seteo: envia y CONSUME la respuesta ('ok') -> mantiene sync."""
+        self.t.escribir(texto)
+        self.t.leer_linea()
 
-    def _set_tension(self, f, V):
-        V = min(max(V, 0.0), self.V_max_hard)     # nunca pasar el tope duro
-        # TODO(lab): ajustar a los comandos de TU fuente
-        f.write("VOLT %.4f" % V)
+    def _query(self, texto):
+        """Comando de lectura: envia y DEVUELVE la respuesta."""
+        self.t.escribir(texto)
+        return self.t.leer_linea()
 
     def aplicar(self, u):
         Va, Vb = control_a_tensiones(u, self.geom, self.V_bias, self.V_max)
-        self._set_tension(self.fa, Va)
-        self._set_tension(self.fb, Vb)
+        self._set(comando_tension(self.canal_a, Va, self.V_max_hard))
+        self._set(comando_tension(self.canal_b, Vb, self.V_max_hard))
         return Va, Vb, fuerza.fuerza_neta(Va, Vb, self.geom)
 
     def reposo(self):
-        self._set_tension(self.fa, self.V_bias)
-        self._set_tension(self.fb, self.V_bias)
+        self._set(comando_tension(self.canal_a, self.V_bias, self.V_max_hard))
+        self._set(comando_tension(self.canal_b, self.V_bias, self.V_max_hard))
 
     def cerrar(self):
         try:
-            for f in (self.fa, self.fb):
-                f.write("OUTP OFF")   # TODO(lab): ajustar
-                f.close()
+            self._set("O0")    # salida OFF
+            self.t.cerrar()
         except Exception:
             pass
+
+    # ---- diagnostico (opcional) ----
+    def modelo(self):
+        """Envia 'a' y devuelve el modelo. Sirve para confirmar puerto y baud."""
+        return self._query("a")
+
+    def leer_tension(self, canal):
+        """Lee la tension MEDIDA de un canal (texto crudo del equipo)."""
+        return self._query(self._LECTURA_V[canal])
+
+    def leer_preset(self, canal):
+        """Lee la tension PRESET (la seteada) de un canal -> confirma la escritura."""
+        return self._query(self._LECTURA_PRESET[canal])
+
+    def leer_tensiones(self):
+        """(V_A, V_B) MEDIDAS en la fuente [V], parseadas. (nan, nan) si falla.
+
+        Lo usa el lazo para registrar la tension REAL (no solo la comandada).
+        """
+        try:
+            va = parsear_tension(self.leer_tension(self.canal_a))
+            vb = parsear_tension(self.leer_tension(self.canal_b))
+            return va, vb
+        except Exception:
+            return float("nan"), float("nan")

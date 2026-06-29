@@ -1,9 +1,9 @@
 # Adquisición y PID — Cavendish con realimentación electrostática
 
 Mantiene el péndulo de torsión **quieto en el nulo** con un PID que comanda
-**2 fuentes de tensión** (cada una alimenta 2 capacitores que actúan juntos).
-La **fuerza de control** necesaria para tenerlo quieto *es la medición*: al
-acercar la masa, cambia esa fuerza.
+**2 canales de una fuente de tensión** (cada canal alimenta 2 capacitores que
+actúan juntos; también sirven 2 fuentes separadas). La **fuerza de control**
+necesaria para tenerlo quieto *es la medición*: al acercar la masa, cambia.
 
 La posición se mide por **palanca óptica**: una cámara filma el spot del láser
 y se calcula su **centroide** (sin asumir forma del spot).
@@ -18,9 +18,10 @@ cámara → centroide → PID → fuerza pedida → 2 tensiones → (se registra
 
 Todo lo que se instala extra (solo para el hardware real):
 ```
-pip install pyvisa
+pip install pyserial
 ```
-(`numpy`, `opencv` y `matplotlib` ya están.)
+(`numpy`, `opencv` y `matplotlib` ya están.) La fuente es una **Hantek PPS2320A**
+por puerto serie (USB), usando sus **2 canales** (CH1, CH2) como las 2 fuentes.
 
 **1) Calibrar (solo clicks):**
 ```
@@ -47,6 +48,39 @@ python fuerza.py --V 25 --b 0.05 --d 1e-3 --brazo 0.03
 
 ---
 
+## Si la fuente no responde — `probar_fuente.py`
+
+**Ojo:** el log muestra la tensión que el PID *pide* (lo que `aplicar()` comanda),
+**no** lo que la fuente confirma. Así que ver "la tensión cambiando" en el log
+**no** prueba que la comunicación ande. Para confirmar de verdad, este script
+**lee de vuelta** de la fuente:
+
+```
+pip install pyserial                       # (una vez)
+python probar_fuente.py                     # lista los puertos COM
+python probar_fuente.py --puerto COM3       # diagnostico: setea y LEE de vuelta
+python probar_fuente.py --puerto COM3 --barrer        # prueba varios bauds
+python probar_fuente.py --puerto COM3 --backend visa  # probar pyvisa (pip install pyvisa pyvisa-py)
+python probar_fuente.py --puerto COM3 --dtr off --rts off
+```
+
+Si `modelo` trae texto y el `preset después` refleja lo seteado → comunicación OK.
+Causas típicas si no anda (en orden): **baud** equivocado (usá `--barrer`),
+**puerto** equivocado, **DTR/RTS** (probá `--dtr off --rts off`), o falta
+`pyserial`. Cuando encuentres lo que funciona, ponelo en `parametros.py`
+(`PUERTO_FUENTE`, `BAUD_FUENTE`, `BACKEND_FUENTE`, `DTR_FUENTE`, `RTS_FUENTE`).
+
+> Sobre pyvisa: si la fuente es un puerto COM, pyvisa (ASRL) usa pyserial por
+> debajo, así que rara vez cambia el resultado; está como opción por las dudas.
+
+**Confirmado (con pyvisa):** la PPS2320A responde **una línea a cada comando**
+(los `set` devuelven `ok`). Por eso hay que **leer esa respuesta después de cada
+comando** (lockstep); si no, las lecturas salen desfasadas. Ya está resuelto en
+`ActuadorPPS2320A` (`_set`/`_query`) y en `probar_fuente.py`. El formato de
+lectura es en **centésimas de V** (`2121` = 21.21 V).
+
+---
+
 ## El único archivo de números: `parametros.py`
 
 Ahí cambiás (solo el número después del `=`): geometría de los capacitores
@@ -69,11 +103,14 @@ poné `0.5` si tu cátedra usa la convención con ½. El par push-pull da
 `Datos/medicionNN/medicionNN_nnnn.txt` (tab-separated, encabezado comentado con `#`):
 
 ```
-t_s  x_mm  y_mm  valido  setpoint_mm  error_mm  cmd  V_A  V_B  F_neta_N
+t_s  x_mm  y_mm  valido  setpoint_mm  error_mm  cmd  V_A  V_B  F_neta_N  V_A_leido  V_B_leido
 ```
 
 Las 3 primeras columnas siguen el formato viejo (compatibles con los análisis
 existentes). `F_neta_N` es la fuerza de control: **la medición del experimento.**
+`V_A`/`V_B` son las tensiones **comandadas**; `V_A_leido`/`V_B_leido` son las
+**medidas en la fuente** (confirman el hardware; quedan `nan` si `LEER_TENSION_REAL=False`
+en `parametros.py`, o si la lectura falla).
 
 ---
 
@@ -96,10 +133,13 @@ y la escala de fuerza son distintos, así que reajustá:
 ## Para MAÑANA en el laboratorio (checklist)
 
 - [ ] `parametros.py`: cargar **geometría real** (`b`, `d`, `BRAZO`) y `V_MAX`, `V_BIAS`.
-- [ ] `parametros.py`: poner las direcciones VISA (`RECURSO_FUENTE_A/B`). Para listarlas:
-      `python -c "import pyvisa; print(pyvisa.ResourceManager().list_resources())"`
-- [ ] `actuador.py` → clase `ActuadorSCPI`: confirmar los **comandos SCPI** de tus
-      fuentes (están marcados con `TODO`: `VOLT`, `OUTP ON/OFF`, `*RST`).
+- [ ] `parametros.py`: poner el **puerto** (`PUERTO_FUENTE`, p.ej. `COM3`) y el
+      **baud** (`BAUD_FUENTE`). Para ver los puertos:
+      `python -m serial.tools.list_ports`
+- [ ] Confirmar el baud: al correr `control_loop.py` imprime el **modelo** de la
+      fuente (comando `a`). Si sale vacío/basura, probá `BAUD_FUENTE` = 2400 / 4800 / 115200.
+- [ ] Verificar que la salida prende: el equipo usa `O1` (ON) / `O0` (OFF). Si los
+      canales no salen independientes, descomentá `self._cmd("O2")` en `ActuadorPPS2320A`.
 - [ ] `python calibracion.py` con la cámara real.
 - [ ] `python control_loop.py --sin-fuentes` para chequear la medición antes de actuar.
 - [ ] Reajustar el PID (ver arriba).

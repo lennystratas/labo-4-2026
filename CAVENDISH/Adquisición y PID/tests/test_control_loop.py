@@ -55,6 +55,14 @@ class _ActFake:
         return 5.0, 6.0, u            # devuelve (V_A, V_B, F_real)
 
 
+class _ActFakeConLectura:
+    def aplicar(self, u):
+        return 5.0, 6.0, u
+
+    def leer_tensiones(self):
+        return 10.0, 11.0             # tension "real" leida de la fuente
+
+
 def test_correr_lazo_registra_filas_y_columnas():
     with tempfile.TemporaryDirectory() as base:
         reg = registro_mod.Registro(base, control_loop.COLUMNAS, periodo_chunk_s=1e12)
@@ -65,6 +73,21 @@ def test_correr_lazo_registra_filas_y_columnas():
         assert n == 5
         data = np.loadtxt(os.path.join(reg.carpeta, "medicion00_0000.txt"))
         assert data.shape == (5, len(control_loop.COLUMNAS))
+
+
+def test_correr_lazo_registra_lectura_real():
+    with tempfile.TemporaryDirectory() as base:
+        reg = registro_mod.Registro(base, control_loop.COLUMNAS, periodo_chunk_s=1e12)
+        pid = PID(0.1, 0.0, 0.0, setpoint=0.0, salida_min=-1.0, salida_max=1.0)
+        control_loop.correr_lazo(_OrigenFake(), _ActFakeConLectura(), pid, fmax=1e-6,
+                                 eje="x", dt_fijo=0.1, n_iter=3, registro=reg,
+                                 leer_real=True)
+        reg.cerrar()
+        data = np.loadtxt(os.path.join(reg.carpeta, "medicion00_0000.txt"))
+        iA = control_loop.COLUMNAS.index("V_A_leido")
+        iB = control_loop.COLUMNAS.index("V_B_leido")
+        assert np.allclose(data[:, iA], 10.0)
+        assert np.allclose(data[:, iB], 11.0)
 
 
 if __name__ == "__main__":

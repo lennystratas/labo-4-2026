@@ -37,9 +37,22 @@ V_MAX  = 30.0            # tension maxima de cada fuente [V]
 V_BIAS = 21.2            # tension de reposo (bias) [V]. Optimo ~ V_MAX/raiz(2)=21.2
                          # para rango simetrico de empuje en ambos sentidos.
 
-# Direcciones VISA de las 2 fuentes (se ven con pyvisa; completar en el lab):
-RECURSO_FUENTE_A = "USB0::0x0000::0x0000::SN_A::INSTR"
-RECURSO_FUENTE_B = "USB0::0x0000::0x0000::SN_B::INSTR"
+# Fuente Hantek PPS2320A por puerto serie (USB). Usa sus 2 canales (CH1, CH2).
+# Necesita pyserial:  pip install pyserial
+PUERTO_FUENTE = "COM3"    # puerto serie (ver en Administrador de dispositivos)
+BAUD_FUENTE   = 9600      # si no responde, proba 2400 / 4800 / 115200
+CANAL_A = 1       # CH1 -> empuja en + (sus 2 capacitores)
+CANAL_B = 2       # CH2 -> empuja en - (sus 2 capacitores)
+I_LIMITE = 0.5    # limite de corriente por canal [A] (el capacitor casi no consume)
+
+# Comunicacion (usa probar_fuente.py para encontrar lo que funciona):
+BACKEND_FUENTE = "visa"     # "visa" (pyvisa, CONFIRMADO que anda) o "serial" (pyserial)
+DTR_FUENTE = None           # None / True / False (si el equipo necesita DTR en cierto estado)
+RTS_FUENTE = None           # None / True / False
+ESPERA_FUENTE = 2.0         # segundos de espera tras abrir el puerto (reset del equipo)
+LEER_TENSION_REAL = True    # registrar la tension MEDIDA en la fuente (columnas V_A_leido/V_B_leido)
+                            # cuesta 2 lecturas serie por vuelta; el pendulo es lento, se banca.
+                            # Poné False si querés el lazo lo mas rapido posible.
 
 
 # ---------------------------------------------------------------------

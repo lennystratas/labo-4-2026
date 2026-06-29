@@ -27,8 +27,11 @@ from pid import PID
 
 # Columnas del registro. Las 3 primeras (t_s, x_mm, y_mm) mantienen
 # compatibilidad con el analisis previo; el resto es propio del feedback.
+# V_A/V_B = tension COMANDADA ; V_A_leido/V_B_leido = tension MEDIDA en la fuente
+# (NaN si no se lee; ver leer_real).
 COLUMNAS = ["t_s", "x_mm", "y_mm", "valido", "setpoint_mm",
-            "error_mm", "cmd", "V_A", "V_B", "F_neta_N"]
+            "error_mm", "cmd", "V_A", "V_B", "F_neta_N",
+            "V_A_leido", "V_B_leido"]
 
 
 def paso_de_control(pos_mm, valido, pid, dt):
@@ -68,13 +71,16 @@ class FuenteCamara:
 
 def correr_lazo(origen, actuador, pid, fmax, eje="x", *,
                 dt_fijo=None, t_max=None, n_iter=None,
-                registro=None, on_iter=None, reloj=time.monotonic):
+                registro=None, on_iter=None, leer_real=False,
+                reloj=time.monotonic):
     """Corre el lazo de control. Devuelve la cantidad de iteraciones hechas.
 
-    origen   : objeto con medir()->Medicion (o None) y paso(dt)
-    actuador : objeto con aplicar(F)->(V_A, V_B, F_real)
-    fmax     : fuerza neta maxima [N] (mapea cmd en [-1,1] a fuerza)
-    dt_fijo  : si se da, usa ese paso (simulacion); si no, mide el reloj real
+    origen    : objeto con medir()->Medicion (o None) y paso(dt)
+    actuador  : objeto con aplicar(F)->(V_A, V_B, F_real)
+    fmax      : fuerza neta maxima [N] (mapea cmd en [-1,1] a fuerza)
+    dt_fijo   : si se da, usa ese paso (simulacion); si no, mide el reloj real
+    leer_real : si True y el actuador tiene leer_tensiones(), registra la
+                tension MEDIDA en la fuente (confirma el hardware; +1 lectura serie)
     """
     t0 = reloj()
     t_prev = t0
@@ -100,10 +106,15 @@ def correr_lazo(origen, actuador, pid, fmax, eje="x", *,
         cmd = max(-1.0, min(1.0, cmd))           # comando normalizado
         Va, Vb, F_real = actuador.aplicar(cmd * fmax)
 
+        if leer_real and hasattr(actuador, "leer_tensiones"):
+            Va_leido, Vb_leido = actuador.leer_tensiones()
+        else:
+            Va_leido = Vb_leido = float("nan")
+
         if registro is not None:
             err = (pid.setpoint - pos) if (m.valido and not math.isnan(pos)) else float("nan")
             registro.agregar([t, m.x_mm, m.y_mm, int(m.valido), pid.setpoint,
-                              err, cmd, Va, Vb, F_real])
+                              err, cmd, Va, Vb, F_real, Va_leido, Vb_leido])
 
         if on_iter is not None and on_iter(i, t, m, cmd, F_real, Va, Vb, origen) is False:
             break
@@ -162,10 +173,18 @@ def main(argv=None):
 
     if a.sin_fuentes:
         act = actuador_mod.ActuadorNulo(P.V_BIAS)
-        print("[modo solo-medir] sin fuentes SCPI")
+        print("[modo solo-medir] sin fuente")
     else:
-        act = actuador_mod.ActuadorSCPI(geom, P.V_BIAS, P.V_MAX,
-                                        P.RECURSO_FUENTE_A, P.RECURSO_FUENTE_B)
+        act = actuador_mod.ActuadorPPS2320A(geom, P.V_BIAS, P.V_MAX,
+                                            P.PUERTO_FUENTE, P.BAUD_FUENTE,
+                                            P.CANAL_A, P.CANAL_B, P.I_LIMITE,
+                                            backend=P.BACKEND_FUENTE,
+                                            dtr=P.DTR_FUENTE, rts=P.RTS_FUENTE,
+                                            espera=P.ESPERA_FUENTE)
+        try:
+            print("Fuente conectada. Modelo:", act.modelo())
+        except Exception as e:
+            print("Aviso: no pude leer el modelo (revisa puerto/baud):", e)
 
     pid = PID(P.KP, P.KI, P.KD, setpoint=P.SETPOINT_MM,
               salida_min=-1.0, salida_max=1.0, tau_deriv=P.TAU_DERIV)
@@ -197,7 +216,8 @@ def main(argv=None):
 
     print("Corriendo lazo. Datos -> %s" % reg.carpeta)
     try:
-        correr_lazo(origen, act, pid, fmax, eje=P.EJE, registro=reg, on_iter=on_iter)
+        correr_lazo(origen, act, pid, fmax, eje=P.EJE, registro=reg, on_iter=on_iter,
+                    leer_real=getattr(P, "LEER_TENSION_REAL", False))
     finally:
         act.reposo()
         act.cerrar()
