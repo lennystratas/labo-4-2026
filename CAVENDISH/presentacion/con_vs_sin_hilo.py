@@ -178,6 +178,21 @@ def mm_a_grados_con_error(v_mm, e_v, L_mm, e_L, FACTOR_ESPEJO=FACTOR_ESPEJO):
 x_deg, Dx_deg = mm_a_grados_con_error(x_mm, mm_por_px, L_mm, 5)
 
 y_deg, Dy_deg = mm_a_grados_con_error(y_mm, mm_por_px, L_mm, 5)
+# %% Buscar Picos
+from scipy.signal import find_peaks
+
+picos, _ = find_peaks(x_deg, distance=800)
+
+# fig_p, ax_p = plt.subplots(figsize=(9, 4), sharex=True)
+# ax_p.errorbar(t, x_deg, fmt="--.", lw=0.7, yerr=Dx_deg, label="Datos")
+# ax_p.plot(t[picos], x_deg[picos], "o", color=colores[5], ms=6, zorder=10)
+sin_hilo = slice(picos[0], picos[2])
+con_hilo = slice(picos[3], picos[7])
+eq_sh = np.mean(x_deg[sin_hilo])
+eq_ch = np.mean(x_deg[con_hilo])
+delta_eq = eq_sh - eq_ch
+print(f"Cambio equilibrio: {delta_eq:2f} deg")
+# %% Graficar
 fig, ax = plt.subplots(figsize=(9, 4), sharex=True)
 ax.errorbar(t, x_deg, fmt="--.", lw=0.7, yerr=Dx_deg, label="Datos")
 ax.set_ylabel("Ángulo [$^\\circ$]")
@@ -194,7 +209,26 @@ ax.axvline(
     alpha=0.8,
     label="Límite hilo",
 )
+ax.hlines(
+    eq_sh,
+    t[picos[0]],
+    t[picos[2]],
+    color=colores[3],
+    lw=2,
+    label="Equilibrio",
+    zorder=10,
+)
+ax.hlines(
+    eq_ch,
+    t[picos[3]],
+    t[picos[7]],
+    color=colores[3],
+    lw=2,
+    # label="Equilibrio con hilo",
+    zorder=10,
+)
 ax.legend(loc="upper left")
+
 svg_offset = 0.1
 fig.text(
     x=0.275,
