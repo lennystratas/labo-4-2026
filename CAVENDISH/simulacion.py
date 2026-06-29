@@ -73,7 +73,7 @@ def gravitational_field_parallelepiped(
 
     gx *= G * density
     gy *= G * density
-
+    print(gx, gy)
     return gx, gy
 
 

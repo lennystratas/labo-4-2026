@@ -1,0 +1,102 @@
+# ============================================================
+# windows7_aero.mplstyle
+# A Matplotlib style inspired by the Windows 7 "Aero" look:
+# glossy blue glass, Segoe UI typography, soft light-blue greys,
+# and the classic Aero color-scheme palette (Blue, Sea, Sage,
+# Pumpkin, Plum, Mahogany, Magenta, Storm).
+#
+# Usage:
+#   import matplotlib.pyplot as plt
+#   plt.style.use("windows7_aero.mplstyle")
+# ============================================================
+
+# ---- Fonts ----
+font.family:        sans-serif
+font.sans-serif:    Segoe UI, Tahoma, Verdana, DejaVu Sans, Arial
+font.size:           10
+
+# ---- Figure ----
+figure.facecolor:    F0F6FC
+figure.edgecolor:    5B9BD5
+figure.figsize:       8, 5
+figure.dpi:           100
+
+# ---- Axes ----
+axes.facecolor:       FFFFFF
+axes.edgecolor:        9CC3E5
+axes.linewidth:        1.2
+axes.grid:             True
+axes.axisbelow:        True
+axes.titlesize:        13
+axes.titleweight:      bold
+axes.titlelocation:    left
+axes.titlecolor:       1F3864
+axes.titlepad:         12
+axes.labelsize:        10
+axes.labelweight:      normal
+axes.labelcolor:       1F3864
+axes.labelpad:         6
+axes.spines.top:       False
+axes.spines.right:     False
+axes.spines.left:      True
+axes.spines.bottom:    True
+
+# Classic Aero "window color" palette
+axes.prop_cycle: cycler('color', ['3D6DA8', '1AA3A3', '6B8E4E', 'E08A3C', '7E5C8A', 'B5444B', 'B5338C', '6E7F8D'])
+
+# ---- Grid ----
+grid.color:            D9E8F5
+grid.linestyle:        -
+grid.linewidth:         0.8
+grid.alpha:             0.9
+
+# ---- Ticks ----
+xtick.color:            2E4A66
+ytick.color:             2E4A66
+xtick.labelsize:         9
+ytick.labelsize:         9
+xtick.direction:         out
+ytick.direction:         out
+xtick.major.size:        4
+ytick.major.size:        4
+xtick.major.width:       1.0
+ytick.major.width:       1.0
+
+# ---- Lines & markers ----
+lines.linewidth:         2.2
+lines.solid_capstyle:    round
+lines.markersize:        6
+lines.markeredgewidth:   0.8
+
+# ---- Patches (bars, wedges, etc.) ----
+patch.facecolor:         3D6DA8
+patch.edgecolor:         5B9BD5
+patch.linewidth:         0.8
+patch.force_edgecolor:   True
+
+# ---- Boxplots ----
+boxplot.boxprops.color:            3D6DA8
+boxplot.whiskerprops.color:        3D6DA8
+boxplot.capprops.color:            3D6DA8
+boxplot.medianprops.color:         B5444B
+boxplot.flierprops.markeredgecolor: 3D6DA8
+
+# ---- Legend ----
+legend.frameon:          True
+legend.facecolor:        F0F6FC
+legend.edgecolor:        9CC3E5
+legend.fontsize:         9
+legend.framealpha:       0.92
+legend.fancybox:         True
+legend.shadow:           True
+legend.borderpad:        0.6
+legend.labelspacing:     0.5
+
+# ---- Text ----
+text.color:               1F3864
+
+# ---- Saving ----
+savefig.facecolor:        F0F6FC
+savefig.edgecolor:        F0F6FC
+savefig.dpi:               150
+savefig.bbox:              tight
