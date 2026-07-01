@@ -45,7 +45,7 @@ def a_minutos(x, pos):
 
 
 formato_minutos = ticker.FuncFormatter(a_minutos)
-nro_medicion = 4
+nro_medicion = 3
 
 # >>> Elegí la medición a graficar (carpeta dentro de Datos) <<<
 CARPETA = os.path.join(
@@ -181,13 +181,13 @@ y_deg, Dy_deg = mm_a_grados_con_error(y_mm, mm_por_px, L_mm, 5)
 # %% Buscar Picos
 from scipy.signal import find_peaks
 
-picos, _ = find_peaks(x_deg, distance=800)
+picos, _ = find_peaks(x_deg, distance=600)
 
-# fig_p, ax_p = plt.subplots(figsize=(9, 4), sharex=True)
-# ax_p.errorbar(t, x_deg, fmt="--.", lw=0.7, yerr=Dx_deg, label="Datos")
-# ax_p.plot(t[picos], x_deg[picos], "o", color=colores[5], ms=6, zorder=10)
-sin_hilo = slice(picos[0], picos[2])
-con_hilo = slice(picos[3], picos[7])
+fig_p, ax_p = plt.subplots(figsize=(9, 4), sharex=True)
+ax_p.errorbar(t, x_deg, fmt="--.", lw=0.7, yerr=Dx_deg, label="Datos")
+ax_p.plot(t[picos], x_deg[picos], "o", color=colores[5], ms=6, zorder=10)
+sin_hilo = slice(picos[1], picos[7])
+con_hilo = slice(picos[1], picos[3])
 eq_sh = np.mean(x_deg[sin_hilo])
 eq_ch = np.mean(x_deg[con_hilo])
 delta_eq = eq_sh - eq_ch
@@ -250,7 +250,14 @@ fig.text(
     bbox=dict(facecolor="white", edgecolor=colores[2], boxstyle="round,pad=0.5"),
 )
 
-
-fig.savefig("figuras/con_vs_sin_hilo.svg", bbox_inches="tight")
 plt.tight_layout()
 plt.show()
+# fig.savefig("figuras/con_vs_sin_hilo.svg", bbox_inches="tight")
+
+# %%
+T = np.diff(t[picos[1:7]])
+x_picos = x_deg[picos[1:7]]
+A = np.convolve(x_picos, [0.5, 0.5], mode="valid") - eq_sh
+plt.plot(A**2, T, ".")
+plt.xlabel("$A^2$")
+plt.ylabel("$T$")
