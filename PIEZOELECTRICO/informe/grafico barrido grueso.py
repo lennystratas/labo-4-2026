@@ -253,7 +253,7 @@ ax2.vlines(
 )
 ax2.legend(loc=3)
 fig.tight_layout()
-fig.savefig(image_folder + f"grafico_barrido_gurueso.pdf", bbox_inches="tight")
+# fig.savefig(image_folder + f"grafico_barrido_gurueso.pdf", bbox_inches="tight")
 # %% Valor de fase mas cercano a f0
 f0_med = np.argmin(np.abs(frecs - 50.1e3))
 print(phi_d[f0_med], Dphi_d[f0_med])
