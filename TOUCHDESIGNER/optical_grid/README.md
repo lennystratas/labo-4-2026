@@ -6,8 +6,9 @@ Una grilla de celdas que se deforma en tiempo real según el optical flow de lo 
 
 1. Abrí un proyecto en TouchDesigner (2023+ recomendado).
 2. Ejecutá `build_optical_grid.py` de alguna de estas formas:
-   - **Textport**: `exec(open(r'C:/ruta/a/build_optical_grid.py', encoding='utf-8').read())`
-   - **Text DAT**: pegá el contenido, click derecho y *Run Script*.
+   - **Text DAT (recomendado)**: creá un Text DAT, poné la ruta del `.py` en su parámetro *File*, y click derecho → *Run Script*.
+   - **Textport**, escribiendo *solo esta línea* (no pegues el contenido del script en el Textport: la consola corta los bloques en las líneas vacías y tira `IndentationError`):
+     `exec(open(r'C:/ruta/a/build_optical_grid.py', encoding='utf-8').read())`
    - **MCP de TouchDesigner**: mandá el archivo a la herramienta que ejecuta Python dentro de TD.
 3. Se crea `/project1/opticalGrid`. La salida es el nodo `OUT`.
 4. Un segundo después aparece en el Textport un **reporte de verificación**. Si algo sale `FALLA` o figura un parámetro que no se pudo setear, está indicado ahí.
