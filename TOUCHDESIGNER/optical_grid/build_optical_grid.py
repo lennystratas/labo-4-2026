@@ -59,7 +59,7 @@ def setmenu(o, names, *keywords):
     if p is None or not p.isMenu:
         LOG.append('{}: menú {} no encontrado'.format(o.path, names))
         return None
-    opts = list(zip(p.menuNames, p.menuLabels))
+    opts = list(zip(p.menuNames or [], p.menuLabels or []))
     for kw in keywords:
         for name, label in opts:
             if kw.lower() == name.lower():
@@ -139,8 +139,14 @@ def shift(parent_op, name, x, y, src, tx='0', ty='0'):
 def clamp_top(parent_op, name, x, y, src, lim_expr):
     o = mk(parent_op, 'limitTOP', name, x, y, [src])
     for p in o.pars():
-        if p.isMenu and any('clamp' in n.lower() for n in p.menuNames):
-            p.val = [n for n in p.menuNames if 'clamp' in n.lower()][0]
+        if not p.isMenu or p.page.name == 'Common':
+            continue
+        names = [n for n in (p.menuNames or []) if 'clamp' in str(n).lower()]
+        if names:
+            try:
+                p.val = names[0]
+            except Exception as e:
+                LOG.append('{}.{}: {}'.format(o.path, p.name, e))
     setp(o, ['min', 'minimum', 'minval'], expr='-' + lim_expr)
     setp(o, ['max', 'maximum', 'maxval'], expr=lim_expr)
     f32(o)
