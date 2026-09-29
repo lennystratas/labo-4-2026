@@ -21,7 +21,7 @@ Una grilla de celdas que se deforma en tiempo real según el optical flow de lo 
 |---|---|
 | Columnas / Filas | Tamaño de la grilla (en vivo, no hace falta reconstruir) |
 | Fuente | Cámara (Video Device In) o archivo (Movie File In) |
-| Optical flow | `NVIDIA` = Optical Flow TOP (Windows + RTX 30xx o más nueva). `Nativo` = aproximación con Slope TOP × diferencia de frames (anda en cualquier GPU y en Mac) |
+| Optical flow | `Palette opticalFlow` (arrastralo a `/project1` con nombre `opticalFlow*`; el script lo conecta solo) o `Nativo` (Slope TOP × diferencia de frames). **Offset flow palette**: 0.5 si la salida del componente está centrada en 0.5 en reposo |
 | Push | Las fronteras se mueven **en la dirección** del flow. Negativo = en contra |
 | Grow | La celda con más movimiento (energía \|flow\|²) **se agranda** y empuja a las vecinas. Negativo = se achica |
 | Límite | Máximo desplazamiento de cada frontera, en celdas (< 0.5). Con 0.45 una celda puede ir de 0.1× a 1.9× su tamaño |
