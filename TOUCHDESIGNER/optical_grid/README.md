@@ -11,23 +11,26 @@ Una grilla de celdas que se deforma en tiempo real según el optical flow de lo 
      `exec(open(r'C:/ruta/a/build_optical_grid.py', encoding='utf-8').read())`
    - **MCP de TouchDesigner**: mandá el archivo a la herramienta que ejecuta Python dentro de TD.
 3. Se crea `/project1/opticalGrid`. La salida es el nodo `OUT`.
-4. Un segundo después aparece en el Textport un **reporte de verificación**. Si algo sale `FALLA` o figura un parámetro que no se pudo setear, está indicado ahí.
+4. **Hueco para el optical flow**: dentro de `opticalGrid`, poné el componente `opticalFlow` de la Palette entre los Null TOPs `to_flow` → **opticalFlow** → `flow_in`.
+5. Un segundo después de correr el script aparece en el Textport un **reporte de verificación**.
 
-> Este script no se pudo correr dentro de TouchDesigner al escribirlo, porque no había acceso a TD. Por eso el builder prueba varios nombres de parámetros y verifica numéricamente las texturas clave, y en el caso de la orientación en Y la corrige solo.
+> El script se escribió sin acceso a TouchDesigner: prueba varios nombres de parámetros y verifica numéricamente las texturas clave.
 
-## Parámetros (página *Optical Grid* del Base COMP)
+## Parámetros (Constant CHOP `params` dentro de `opticalGrid`)
 
-| Parámetro | Qué hace |
-|---|---|
-| Columnas / Filas | Tamaño de la grilla (en vivo, no hace falta reconstruir) |
-| Fuente | Cámara (Video Device In) o archivo (Movie File In) |
-| Optical flow | `Palette opticalFlow` (arrastralo a `/project1` con nombre `opticalFlow*`; el script lo conecta solo) o `Nativo` (Slope TOP × diferencia de frames). **Offset flow palette**: 0.5 si la salida del componente está centrada en 0.5 en reposo |
-| Push | Las fronteras se mueven **en la dirección** del flow. Negativo = en contra |
-| Grow | La celda con más movimiento (energía \|flow\|²) **se agranda** y empuja a las vecinas. Negativo = se achica |
-| Límite | Máximo desplazamiento de cada frontera, en celdas (< 0.5). Con 0.45 una celda puede ir de 0.1× a 1.9× su tamaño |
-| Suavizado flow | EMA sobre las estadísticas de flow por celda (0 = crudo, 0.99 = muy lento) |
-| Suavizado grilla | EMA sobre la geometría final |
-| Opacidad líneas | Las líneas blancas entre celdas |
+| Canal | Valor | Qué hace |
+|---|---|---|
+| cols / rows | 12 / 8 | Tamaño de la grilla (en vivo, 2..48) |
+| resw / resh | 1280 / 720 | Resolución de salida |
+| source | 0 | 0 = cámara (Video Device In), 1 = archivo (Movie File In; el archivo se elige en `movie_in`) |
+| flowoffset | 0 | Se resta a la salida del optical flow (0.5 si en reposo da ~0.5) |
+| flowgain | 1 | Ganancia del optical flow |
+| push | 1.5 | Las fronteras se mueven **en la dirección** del flow. Negativo = en contra |
+| grow | 4 | La celda con más movimiento (energía \|flow\|²) **se agranda** y empuja a las vecinas |
+| limit | 0.45 | Máximo desplazamiento de cada frontera, en celdas (< 0.5) |
+| smoothstats | 0.6 | Suavizado temporal del flow por celda (0 = crudo, 0.99 = muy lento) |
+| smoothgrid | 0.85 | Suavizado temporal de la geometría |
+| lines | 1 | Opacidad de las líneas entre celdas |
 
 ## Cómo funciona
 
@@ -43,7 +46,7 @@ video ─► Optical Flow ─► (fx, fy, fx²+fy²) ─► Resolution → Cols�
             Geometry COMP con instancing por TOP (1 pixel = 1 quad)
             Render A: gradiente local × (1/N, 1/M)   Render B: color = origen de la celda fuente
                                               │
-                         A + B = mapa UV ─► Remap TOP(video, mapa) ─► + líneas (Wireframe MAT) ─► OUT
+                         A + B = mapa UV ─► Remap TOP(video, mapa) ─► + líneas (bordes de render B) ─► OUT
 ```
 
 ### 1. Bordes fijos
@@ -68,6 +71,9 @@ El instancing de TD solo puede **trasladar** las coordenadas de textura de cada 
 - otra con el origen de la celda fuente como color de instancia.
 
 Sumadas dan, para cada pixel de salida, la coordenada de la imagen fuente que tiene que mostrar. El Remap TOP hace el resto: cada celda muestra su porción original de la imagen, estirada o comprimida.
+
+### Líneas sin diagonales
+Las líneas no se dibujan con wireframe (que mostraría la diagonal de los dos triángulos de cada quad). Se detectan en el render de orígenes: un pixel es borde cuando su celda difiere de la del pixel vecino (Transform de 1 px + resta + cuadrado + ganancia + Limit).
 
 ## Ideas para seguir
 - Más contraste: bajá Columnas/Filas o subí Grow. Si el movimiento se siente "al revés", invertí el signo de Push.
