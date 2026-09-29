@@ -16,12 +16,14 @@ Una grilla de celdas que se deforma en tiempo real según el optical flow de lo 
 
 > El script se escribió sin acceso a TouchDesigner: prueba varios nombres de parámetros y verifica numéricamente las texturas clave.
 
-## Parámetros (Constant CHOP `params` dentro de `opticalGrid`)
+## Parámetros
+
+En el componente `opticalGrid` (página *Optical Grid*): **Columnas** (12), **Filas** (8) y **Resolución** (1280 × 720). Se pueden cambiar en vivo.
+
+El resto está en el Constant CHOP `params` dentro de `opticalGrid`:
 
 | Canal | Valor | Qué hace |
 |---|---|---|
-| cols / rows | 12 / 8 | Tamaño de la grilla (en vivo, 2..48) |
-| resw / resh | 1280 / 720 | Resolución de salida |
 | source | 0 | 0 = cámara (Video Device In), 1 = archivo (Movie File In; el archivo se elige en `movie_in`) |
 | flowoffset | 0 | Se resta a la salida del optical flow (0.5 si en reposo da ~0.5) |
 | flowgain | 1 | Ganancia del optical flow |

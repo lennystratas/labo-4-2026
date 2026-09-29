@@ -3,7 +3,8 @@ OPTICAL GRID — constructor de red para TouchDesigner (solo nodos nativos, sin 
 Pegar en un Text DAT y click derecho > Run Script.
 
 Crea /project1/opticalGrid (lo reemplaza si existe).
-  - Parámetros: Constant CHOP 'params' dentro de opticalGrid.
+  - Parámetros del componente (parent): Columnas, Filas y Resolución.
+  - El resto de los parámetros: Constant CHOP 'params' dentro de opticalGrid.
   - HUECO para el optical flow: conectá  to_flow -> [opticalFlow de la Palette] -> flow_in
     (los dos son Null TOPs dentro de opticalGrid; hay lugar libre entre ellos).
 ~1 s después imprime un reporte de verificación en el Textport.
@@ -17,10 +18,6 @@ LOG = []
 
 # ----------------------------------------------------------------------------- parámetros
 PARAMS = [
-    ('cols', 12),          # columnas de la grilla (2..48)
-    ('rows', 8),           # filas de la grilla (2..48)
-    ('resw', 1280),        # resolución de salida
-    ('resh', 720),
     ('source', 0),         # 0 = cámara (Video Device In), 1 = archivo (Movie File In)
     ('flowoffset', 0),     # restar a la salida del optical flow (0.5 si en reposo da ~0.5)
     ('flowgain', 1),       # ganancia del optical flow
@@ -38,10 +35,11 @@ def C(name):
     return "op('params')['{}'].eval()".format(name)
 
 
-N = 'int({})'.format(C('cols'))
-M = 'int({})'.format(C('rows'))
-W = 'int({})'.format(C('resw'))
-H = 'int({})'.format(C('resh'))
+# Columnas, filas y resolución: parámetros custom del Base COMP (parent)
+N = 'int(parent().par.Cols)'
+M = 'int(parent().par.Rows)'
+W = 'int(parent().par.Res1)'     # se ajusta en build() al nombre real del par
+H = 'int(parent().par.Res2)'
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -232,6 +230,23 @@ def build():
         old.destroy()
     og = root.create(td.baseCOMP, NAME)
 
+    pg = og.appendCustomPage('Optical Grid')
+    for name, label, val, lo, hi in (('Cols', 'Columnas', 12, 2, 48),
+                                     ('Rows', 'Filas', 8, 2, 48)):
+        p = pg.appendInt(name, label=label)[0]
+        p.min, p.clampMin, p.max, p.clampMax = lo, True, hi, True
+        p.normMin, p.normMax = lo, hi
+        p.default = p.val = val
+    pr = pg.appendInt('Res', label='Resolución', size=2)
+    pr[0].default = pr[0].val = 1280
+    pr[1].default = pr[1].val = 720
+    for q in pr:
+        q.min, q.clampMin = 16, True
+        q.normMin, q.normMax = 16, 3840
+    global W, H
+    W = 'int(parent().par.{})'.format(pr[0].name)
+    H = 'int(parent().par.{})'.format(pr[1].name)
+
     make_params(og)
 
     # ================================================================ 1. FUENTE
@@ -420,8 +435,7 @@ def build():
 def verify():
     import numpy as np
     og = op(ROOT_PATH + '/' + NAME)
-    prm = og.op('params')
-    n, m = int(prm['cols'].eval()), int(prm['rows'].eval())
+    n, m = int(og.par.Cols), int(og.par.Rows)
     rep, ok = [], True
 
     def a(name):
