@@ -89,7 +89,8 @@ float dist2(vec3 v)
 # ---------------------------------------------------------------------
 # sim_a: advección + inyección de humo + empuje del texto
 #   iChannel0 presión (frame anterior)   iChannel1 sim_a (frame anterior)
-#   iChannel2 máscara del texto          iChannel3 máscara (frame anterior)
+#   iChannel2 máscara del texto
+#   Salida: xy velocidad, z densidad, w máscara (para el próximo frame)
 # ---------------------------------------------------------------------
 SIM_A = r'''
 #define DENSIDAD uP.x
@@ -155,7 +156,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     // entre este frame y el anterior (flujo óptico).
     vec2  px = 1. / iResolution.xy;
     float m  = texture(iChannel2, q).a;
-    float mp = texture(iChannel3, q).a;
+    float mp = texture(iChannel1, q).a;   // máscara del frame anterior
     vec2  g  = vec2(texture(iChannel2, q + vec2(px.x, 0.)).a - texture(iChannel2, q - vec2(px.x, 0.)).a,
                     texture(iChannel2, q + vec2(0., px.y)).a - texture(iChannel2, q - vec2(0., px.y)).a) * 0.5;
     vec2  vText = -(m - mp) * g / (dot(g, g) + 1e-3);
@@ -167,7 +168,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     density = min(1., density);
     density *= 0.99;
     veld = vignette(vec3(velocity, density), q, 1.);
-    fragColor = vec4(veld, 1);
+    fragColor = vec4(veld, m);
 }
 '''
 
@@ -625,7 +626,7 @@ def build_humo(flyer):
     negro.par.alpha = 0
 
     sim_params = ('parent.Flyer.par.Densidad', 'parent.Flyer.par.Empuje')
-    a = glsl_pass(comp, 'sim_a', SIM_A, 4, SIM, 0, 0, 'rgba32float', sim_params)
+    a = glsl_pass(comp, 'sim_a', SIM_A, 3, SIM, 0, 0, 'rgba32float', sim_params)
     b = glsl_pass(comp, 'sim_b', SIM_B, 1, SIM, 200, 0, 'rgba32float')
     c = glsl_pass(comp, 'sim_c', SIM_C, 2, SIM, 400, 0, 'rgba32float')
     d = glsl_pass(comp, 'sim_d', SIM_D, 1, SIM, 600, 0, 'rgba32float')
@@ -634,12 +635,10 @@ def build_humo(flyer):
 
     fb_a = feedback(comp, 'sim_a_anterior', 'sim_a', negro, -200, -300)
     fb_d = feedback(comp, 'sim_d_anterior', 'sim_d', negro, -200, -450)
-    fb_m = feedback(comp, 'mascara_anterior', 'mascara', negro, -200, -150)
 
     wire(fb_d, a, 0)
     wire(fb_a, a, 1)
     wire(mascara, a, 2)
-    wire(fb_m, a, 3)
     wire(a, b, 0)
     wire(b, c, 0)
     wire(fb_d, c, 1)
