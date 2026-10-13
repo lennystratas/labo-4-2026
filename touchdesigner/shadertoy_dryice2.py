@@ -9,7 +9,7 @@
 #
 #  Red: bufA (advección) -> bufB (divergencia) -> bufC (presión 1)
 #       -> bufD (presión 2) ;  bufA lee bufA y bufD del frame anterior
-#       (Feedback TOPs) ; image lee bufA y hace el render 3D.
+#       (Feedback TOPs) ; image lee bufA y renderiza solo el humo.
 # =====================================================================
 
 RES = (1280, 720)
@@ -262,47 +262,17 @@ void mainImage( out vec4 fragColor, in vec2 C )
 }
 '''
 
-# ----------------------------- Image ---------------------------------
+# ------------------------- Image: solo el humo ------------------------
+# Sin bolas ni piso. La luz sigue el recorrido de la bola blanca original.
+# camTilt y camDist se pueden cambiar en vivo en el DAT image_glsl.
 IMAGE = r'''
-float sceneIntersection(in vec3 ro,in vec3 rd, out vec3 inter, out vec3 normal, out vec3 color, in float dist, out vec3 lightPos)
+const float camTilt = 10.;  // grados desde la vertical (0 = cenital, original 30)
+const float camDist = 1.4;  // distancia al centro (original 2)
+
+vec3 getLightPos()
 {
-    float mint = dist;
-    inter = vec3(0);
-    normal = vec3(0);
-    color = vec3(0);
-    for(int i = 0 ; i < nbSphere ; i++)
-    {
-        vec2 p2d = spherePosition(i, iFrame);
-		vec3 pos = vec3(p2d.x, ballRadius, p2d.y);
-        vec3 ballColor = vec3(1, 0, 0);
-        if( i == 0)
-        {
-            ballColor = vec3(1);
-            lightPos = pos + vec3(0, lightHeight, 0);
-        }
-        float t = sphIntersect( ro, rd, pos, ballRadius).x;
-        if(t > 0. && t < mint)
-        {
-            mint = t;
-            inter = (ro + mint * rd);
-            normal = normalize(inter - pos);
-            color = ballColor;
-        }
-    }
-    {
-        float aspecRatio = iResolution.x / iResolution.y;
-        vec3 boxNormal;
-    	float t = boxIntersection(ro, rd, vec3(aspecRatio,0.1,1), vec3(0,-0.1,0),boxNormal).x;
-        if(t > 0. && t < mint)
-        {
-            mint = t;
-            inter = (ro + mint * rd);
-			normal = boxNormal;
-            ivec2 tileId = ivec2(vec2(inter.x, inter.z) * 3. + 100.);
-            color = ((tileId.x & 1) ^ (tileId.y & 1)) == 0 ? vec3(0.3) : vec3(0.15);
-        }
-    }
-	return mint;
+    vec2 p2d = spherePosition(0, iFrame);
+    return vec3(p2d.x, ballRadius + lightHeight, p2d.y);
 }
 
 float sampleFog(in vec3 pos)
@@ -317,75 +287,50 @@ float sampleFog(in vec3 pos)
     return texture(iChannel0, uv).z;
 }
 
-vec3 Render(in vec3 ro,in vec3 rd,in float dist, float fudge)
+vec3 Render(in vec3 ro,in vec3 rd, float fudge)
 {
-    vec3  inter;
-    vec3  normal;
-    vec3  baseColor;
-    vec3  lightPos;
-    float mint = sceneIntersection(ro, rd, inter, normal, baseColor, dist, lightPos);
-    vec3 color = vec3(0);
-
-    if(mint<dist)
-    {
-        vec3 lightDir = normalize(lightPos - inter);
-        float lightDist2 = dist2(lightPos - inter);
-        vec3 shadowStep = (fogHeigth / float(nbSlice)) * lightDir / lightDir.y;
-        float shadowDist = 0.;
-        for(int i = 0 ; i < nbSlice ; i++)
-        {
-            vec3 shadowPos = inter + shadowStep * float(i);
-            float v = sampleFog(shadowPos) * fogHeigth;
-            shadowDist += min(max(0., v - shadowPos.y), fogSlice) * length(shadowStep) / fogSlice;
-        }
-        float shadowFactor = exp(-shadowDist * shadowDensity * 0.25);
-        color = baseColor * (max(0., dot(normal, lightDir) * shadowFactor) + 0.2) / lightDist2;
-    }
-
+    vec3 lightPos = getLightPos();
 	float t;
-    if(floorIntersect(ro, rd, fogHeigth, t))
+    if(!floorIntersect(ro, rd, fogHeigth, t))
+        return vec3(0);
+
+    vec3 curPos = ro + rd * t;
+    vec3 fogStep = (fogHeigth / float(nbSlice)) * rd / abs(rd.y);
+    curPos += fudge * fogStep;
+    float stepLen = length(fogStep);
+    float curDensity = 0.;
+    float transmittance = 1.;
+    float lightEnergy = 0.;
+    for(int i = 0; i < nbSlice; i++)
     {
-        vec3 curPos = ro + rd * t;
-        vec3 fogStep = (fogHeigth / float(nbSlice)) * rd / abs(rd.y);
-        curPos += fudge * fogStep;
-        float stepLen = length(fogStep);
-        float curDensity = 0.;
-        float transmittance = 1.;
-        float lightEnergy = 0.;
-        for(int i = 0; i < nbSlice; i++)
+        float curHeigth = sampleFog(curPos) * fogHeigth;
+        float curSample = min(max(0., curHeigth - curPos.y), fogSlice) * stepLen / fogSlice;
+        if(curSample > 0.001)
         {
-            if( dot(curPos - ro, rd) > mint)
-                break;
-            float curHeigth = sampleFog(curPos) * fogHeigth;
-            float curSample = min(max(0., curHeigth - curPos.y), fogSlice) * stepLen / fogSlice;
-            if(curSample > 0.001)
+            vec3 lightDir = normalize(lightPos - curPos);
+            vec3 shadowStep = (fogHeigth / float(nbSlice)) * lightDir / lightDir.y;
+            float lightDist2 = dist2(lightPos - curPos);
+            vec3 shadowPos = curPos + shadowStep * fudge;
+            float shadowDist = 0.;
+            for (int j = 0; j < nbSlice; j++)
             {
-                vec3 lightDir = normalize(lightPos - curPos);
-                vec3 shadowStep = (fogHeigth / float(nbSlice)) * lightDir / lightDir.y;
-                float lightDist2 = dist2(lightPos - curPos);
-                vec3 shadowPos = curPos + shadowStep * fudge;
-                float shadowDist = 0.;
-                for (int j = 0; j < nbSlice; j++)
+                shadowPos += shadowStep;
+                if(shadowPos.y > fogHeigth)
                 {
-                    shadowPos += shadowStep;
-                    if(shadowPos.y > fogHeigth)
-                    {
-                        break;
-                    }
-                    float curHeight = sampleFog(shadowPos) * fogHeigth;
-             		shadowDist += min(max(0., curHeight - shadowPos.y), fogSlice) * length(shadowStep) / fogSlice;
+                    break;
                 }
-            	float shadowFactor = exp(-shadowDist * shadowDensity) / lightDist2;
-                curDensity = curSample * fogDensity;
-                float absorbedlight =  shadowFactor * (1. * curDensity);
-                lightEnergy += absorbedlight * transmittance;
-                transmittance *= 1. - curDensity;
+                float curHeight = sampleFog(shadowPos) * fogHeigth;
+         		shadowDist += min(max(0., curHeight - shadowPos.y), fogSlice) * length(shadowStep) / fogSlice;
             }
-            curPos+= fogStep;
+        	float shadowFactor = exp(-shadowDist * shadowDensity) / lightDist2;
+            curDensity = curSample * fogDensity;
+            float absorbedlight =  shadowFactor * (1. * curDensity);
+            lightEnergy += absorbedlight * transmittance;
+            transmittance *= 1. - curDensity;
         }
-        color = mix(color, vec3(lightEnergy), 1. - transmittance);
+        curPos+= fogStep;
     }
-    return color;
+    return vec3(lightEnergy) * (1. - transmittance);
 }
 
 vec3 vignette(vec3 color, vec2 q, float v)
@@ -407,12 +352,12 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 p = (-iResolution.xy + 2.0*fragCoord)/iResolution.y;
     float theta	= radians(360.)*(iMouse.x/iResolution.x-0.5) - radians(90.);
-    float phi	= -radians(30.);
-    vec3 ro = 2. * vec3( sin(phi)*cos(theta),cos(phi),sin(phi)*sin(theta));
+    float phi	= -radians(max(camTilt, 1.));  // a 0° exacto la cámara se indefine
+    vec3 ro = camDist * vec3( sin(phi)*cos(theta),cos(phi),sin(phi)*sin(theta));
     vec3 ta = vec3( 0 );
     mat3 ca = setCamera( ro, ta );
     vec3 rd =  ca*normalize(vec3(p,1.5));
-    vec3 tot = Render(ro ,rd, 6., hash12(fragCoord + iTime));
+    vec3 tot = Render(ro ,rd, hash12(fragCoord + iTime));
 	tot = vignette(tot, fragCoord / iResolution.xy, 0.6);
 	fragColor = vec4( sqrt(tot), 1.0 );
 }
