@@ -603,7 +603,9 @@ def build_titulo(flyer):
 def build_humo(flyer):
     comp = flyer.create(baseCOMP, 'humo')
     comp.nodeX, comp.nodeY = 200, -300
-    texto = comp.create(inTOP, 'in_texto')
+    # Toma el título por ruta (sin cables entre COMPs)
+    texto = comp.create(selectTOP, 'texto')
+    texto.par.top = '../titulo/out1'
     texto.nodeX, texto.nodeY = -600, 0
 
     # Máscara del texto a la resolución de la simulación (suavizada para
@@ -701,17 +703,24 @@ def build():
         m.par.file.expr = 'parent.Flyer.par.%s' % par
         m.nodeX, m.nodeY = 0, 300 - i * 150
 
-    titulo = build_titulo(flyer)
-    humo = build_humo(flyer)
-    titulo.outputConnectors[0].connect(humo.inputConnectors[0])
+    build_titulo(flyer)
+    build_humo(flyer)
+
+    # Salidas de los COMPs tomadas por ruta con Select TOPs
+    sel_humo = flyer.create(selectTOP, 'humo_out')
+    sel_humo.par.top = 'humo/out1'
+    sel_humo.nodeX, sel_humo.nodeY = 300, -150
+    sel_titulo = flyer.create(selectTOP, 'titulo_out')
+    sel_titulo.par.top = 'titulo/out1'
+    sel_titulo.nodeX, sel_titulo.nodeY = 300, -300
 
     comp = glsl_pass(flyer, 'composicion', COMPOSICION, 5, RES, 500, 0, None,
                      ('parent.Flyer.par.Corte', 'parent.Flyer.par.Limpieza',
                       'parent.Flyer.par.Grano'))
     for i, name in enumerate(('foto', 'recorte', 'profundidad')):
         wire(flyer.op(name), comp, i)
-    wire(humo, comp, 3)
-    wire(titulo, comp, 4)
+    wire(sel_humo, comp, 3)
+    wire(sel_titulo, comp, 4)
 
     final = flyer.create(nullTOP, 'final')
     final.nodeX, final.nodeY = 700, 0
