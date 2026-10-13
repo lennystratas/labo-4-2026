@@ -5,8 +5,8 @@
 #        https://www.shadertoy.com/view/WlVyRV   (CC BY-NC-SA 3.0)
 #
 #  Uso:
-#   1. Poné foto.jpg, recorte.png y profundidad.png en una carpeta
-#      "flyer" al lado del .toe (o cambiá las rutas en CARPETA).
+#   1. Poné foto.jpg, recorte.png y profundidad.png al lado del .toe
+#      (o cambiá las rutas en los parámetros del COMP).
 #   2. Pegá ESTE ARCHIVO COMPLETO en un Text DAT -> click derecho ->
 #      Run Script. Se crea /project1/ossyrave y el timeline queda en
 #      12 s a 60 fps.
@@ -20,12 +20,12 @@
 #  siempre desde el frame 1 sin saltear frames (Exportar ya lo hace).
 # =====================================================================
 
-TITULO = 'OSSYRAVE'
+LINEAS = ('OSSY', 'RAVE')       # título en dos líneas
+TITULO = ''.join(LINEAS)
 FPS = 60
 DURACION = 12                 # segundos
 RES = (1116, 2000)            # resolución del flyer (la de las imágenes)
 SIM = (558, 1000)             # resolución de la simulación de humo
-CARPETA = 'flyer'             # relativa a la carpeta del proyecto
 NAME = 'ossyrave'
 
 # =====================================================================
@@ -95,6 +95,7 @@ float dist2(vec3 v)
 SIM_A = r'''
 #define DENSIDAD uP.x
 #define EMPUJE   uP.y
+#define SUBIDA   uP.z
 
 vec2 fbm(vec3 p, int octaveNum)
 {
@@ -138,8 +139,21 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     vec2 q  = fragCoord / iResolution.xy;
     vec2 uv = (2. * fragCoord - iResolution.xy) / iResolution.y;
 
-    // El humo nace sobre el piso (parte baja del flyer)
-    float piso = 1. - smoothstep(0.04, 0.42, q.y);
+    // Colchón de humo fijo sobre el piso: está desde el frame 1 y tapa
+    // el corte del recorte a la altura de los pies.
+    float colchon = (1. - smoothstep(0.0, 0.17, q.y))
+                  * (0.55 + 0.45 * noise(vec3(uv * vec2(5., 9.), iTime * 0.4)));
+    if (iFrame == 0)
+    {
+        density = colchon;
+        velocity = vec2(0.);
+    }
+    density = max(density, colchon);
+
+    // El humo nace sobre el piso y flota hacia arriba
+    float piso = 1. - smoothstep(0.02, 0.30, q.y);
+    velocity.y += 0.04 * SUBIDA * density;
+    velocity *= 0.995;
 
     // Perturbación fina
     vec2 detailNoise = fbm(vec3(uv * 40., iTime * 0.5 + 30.), 7) - 0.5;
@@ -166,7 +180,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     density *= 1. - m;
 
     density = min(1., density);
-    density *= 0.99;
+    density *= 0.996;      // se disipa lento: llega hasta arriba
     veld = vignette(vec3(velocity, density), q, 1.);
     fragColor = vec4(veld, m);
 }
@@ -402,14 +416,21 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 #   iChannel0 capas   iChannel1 título (premult)
 # ---------------------------------------------------------------------
 TERMINACION = r'''
-#define GRANO uP.x
+#define GRANO  uP.x
+#define GLITCH uP.y    // separación RGB del título (la da animacion.glitch)
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 uv = fragCoord / iResolution.xy;
     vec3 col = texture(iChannel0, uv).rgb;
-    vec4 titulo = texture(iChannel1, uv);
-    col = col * (1. - titulo.a) + titulo.rgb;
+
+    // Título con separación de canales (rojo a un lado, azul al otro)
+    vec2 d = vec2((1.5 + 16. * GLITCH) / iResolution.x, 0.);
+    vec4 tR = texture(iChannel1, uv + d);
+    vec4 tG = texture(iChannel1, uv);
+    vec4 tB = texture(iChannel1, uv - d);
+    float ta = max(tG.a, max(tR.a, tB.a));
+    col = col * (1. - ta) + vec3(tR.r, tG.g, tB.b);
 
     vec2 c = uv - 0.5;
     col *= 1. - 0.6 * dot(c, c);
@@ -422,46 +443,87 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 #  Animación del título (va a ossyrave/titulo/animacion)
 # =====================================================================
 
-ANIMACION = '''# Animación de las letras del título.
+ANIMACION = '''# Animación del título.
 # Todo depende solo del frame -> cada reproducción es idéntica.
 # Las letras empujan el humo solas: cualquier movimiento que hagas acá
-# (o con keyframes en los Transform TOP) se transmite al humo.
+# (o con keyframes en los Transform TOP mov1..mov8) se transmite al humo.
 #
 # Unidades:  x, y  -> fracción de la pantalla (0 = centro, 0.5 = borde)
-#            escala -> 1 = tamaño normal     rot -> grados
+#            escala_x, escala_y -> 1 = tamaño normal    rot -> grados
 #            opacidad -> 0..1
 
 import math
 
 FPS = %(fps)d
-TEXTO = %(texto)r
-ESPACIADO = 0.118     # distancia entre letras (fracción del ancho)
-Y_FINAL = 0.33        # altura final del título
-Y_INICIO = -0.62      # arrancan debajo de la pantalla y atraviesan el humo
-DESFASE = 0.22        # segundos entre una letra y la siguiente
-SUBIDA = 3.4          # segundos que tarda cada letra en llegar
+LINEAS = %(lineas)r
+ESTIRAR = 1.35              # letras extendidas: ancho / alto
+ANCHO = 0.205               # distancia entre letras (fracción del ancho)
+Y_LINEAS = (0.37, 0.265)    # altura de cada línea
+ENTRADA = (1.0, 1.6)        # segundo en que empieza a entrar cada línea
+LADO = (-1, 1)              # OSSY entra por la izquierda, RAVE por la derecha
+DESFASE = 0.10              # segundos entre letras
+VIAJE = 2.0                 # segundos que tarda cada letra en entrar
+DESTELLO = 0.3              # segundos de parpadeo al llegar
 
 
 def _suave(x):
-    # acelera y frena suave: las letras no se mueven a saltos y el humo
-    # sigue bien su movimiento
     x = min(max(x, 0.), 1.)
     return x * x * (3. - 2. * x)
 
 
+def _ubicar(i):
+    for linea, texto in enumerate(LINEAS):
+        if i < len(texto):
+            return linea, i
+        i -= len(texto)
+
+
+def _estado(i, t):
+    linea, col = _ubicar(i)
+    n = len(LINEAS[linea])
+    lado = LADO[linea]
+    # entra primero la letra que tiene más camino por delante
+    orden = (n - 1 - col) if lado < 0 else col
+    inicio = ENTRADA[linea] + orden * DESFASE
+    u = (t - inicio) / VIAJE
+    k = _suave(u)
+    x_final = (col - (n - 1) / 2.) * ANCHO
+    x_inicio = lado * 0.75                 # justo afuera de la pantalla
+    x = x_inicio + (x_final - x_inicio) * k
+    # velocidad relativa (0..1) para estirar la letra y el glitch
+    vel = 0.
+    if 0. < u < 1.:
+        vel = min(abs(x_final - x_inicio) * 6. * u * (1. - u) / VIAJE / 0.9, 1.)
+    return linea, x, u, vel
+
+
 def letra(i, frame):
     t = (frame - 1) / FPS
-    n = len(TEXTO)
-    inicio = 1.0 + i * DESFASE
-    k = _suave((t - inicio) / SUBIDA)
+    linea, x, u, vel = _estado(i, t)
+    llegada = (u - 1.) * VIAJE                # segundos desde que llegó
+    opacidad = 1. if u > 0. else 0.
+    if 0. <= llegada < DESTELLO:              # estroboscópico al llegar
+        opacidad = 1. if (frame // 3) %% 2 == 0 else 0.25
+    return {'x': x,
+            'y': Y_LINEAS[linea],
+            'escala_x': ESTIRAR * (1. + 0.5 * vel),   # se estira con la velocidad
+            'escala_y': 1. - 0.15 * vel,
+            'rot': 0.,
+            'opacidad': opacidad}
 
-    x = (i - (n - 1) / 2.) * ESPACIADO
-    y = Y_INICIO + (Y_FINAL - Y_INICIO) * k
-    y += 0.004 * math.sin(t * 1.3 + i * 0.9) * k          # flota
-    rot = (1. - k) * (9. if i %% 2 else -9.)
-    opacidad = min(max((t - inicio) / 0.5, 0.), 1.)
-    return {'x': x, 'y': y, 'escala': 1., 'rot': rot, 'opacidad': opacidad}
-''' % {'fps': FPS, 'texto': TITULO}
+
+def glitch(frame):
+    # 0..1: separación RGB del título. Sube cuando las letras se mueven
+    # y en dos golpes cortos más adelante.
+    t = (frame - 1) / FPS
+    g = 0.
+    for i in range(sum(len(l) for l in LINEAS)):
+        g = max(g, _estado(i, t)[3])
+    for golpe in (6.5, 9.2):
+        if 0. <= t - golpe < 0.25:
+            g = max(g, 0.8 if (frame // 2) %% 2 == 0 else 0.2)
+    return g
+''' % {'fps': FPS, 'lineas': LINEAS}
 
 # =====================================================================
 #  Construcción de la red (solo corre dentro de TouchDesigner)
@@ -578,16 +640,17 @@ def add_custom_pars(comp):
                               ('Recorte', 'Recorte (alfa)', 'recorte.png'),
                               ('Profundidad', 'Profundidad', 'profundidad.png')):
         p = page.appendFile(name, label=label)[0]
-        p.val = CARPETA + '/' + file
+        p.val = file          # relativa a la carpeta del .toe
     fpar('Densidad', 'Densidad del humo', 1.0, 0, 3)
     fpar('Brillo', 'Brillo del humo', 1.0, 0, 3)
     fpar('Empuje', 'Empuje del texto', 1.0, 0, 3)
+    fpar('Subida', 'Subida del humo', 1.0, 0, 3)
     fpar('Corte', 'Humo delante hasta', 0.38, 0, 1)
     fpar('Limpieza', 'Borrar humo pintado', 1.0, 0, 1)
     fpar('Grano', 'Grano', 0.04, 0, 0.2)
     p = page.appendStr('Fuente', label='Fuente')[0]
     p.val = 'Arial Black'
-    fpar('Tamano', 'Tamaño de letra', 125, 40, 400)
+    fpar('Tamano', 'Tamaño de letra', 220, 40, 500)
     page.appendPulse('Exportar', label='Exportar 12 s')
 
 
@@ -610,7 +673,7 @@ def build_titulo(flyer):
         txt.par.text = ch
         txt.par.font.expr = 'parent.Flyer.par.Fuente'
         txt.par.fontsizex.expr = 'parent.Flyer.par.Tamano'
-        txt.par.fontcolorr, txt.par.fontcolorg, txt.par.fontcolorb = 0.96, 0.93, 0.86
+        txt.par.fontcolorr, txt.par.fontcolorg, txt.par.fontcolorb = 0.97, 0.96, 0.93
         txt.par.fontalpha.expr = get % 'opacidad'
         txt.par.bgalpha = 0
         mov = comp.create(transformTOP, 'mov%d' % (i + 1))
@@ -618,8 +681,8 @@ def build_titulo(flyer):
         mov.par.tx.expr = get % 'x'
         mov.par.ty.expr = get % 'y'
         mov.par.rotate.expr = get % 'rot'
-        mov.par.sx.expr = get % 'escala'
-        mov.par.sy.expr = get % 'escala'
+        mov.par.sx.expr = get % 'escala_x'
+        mov.par.sy.expr = get % 'escala_y'
         txt.outputConnectors[0].connect(mov)
         mov.outputConnectors[0].connect(letras.inputConnectors[i])
     out = comp.create(outTOP, 'out1')
@@ -652,7 +715,8 @@ def build_humo(flyer):
     negro.par.format = 'rgba32float'
     negro.par.alpha = 0
 
-    sim_params = ('parent.Flyer.par.Densidad', 'parent.Flyer.par.Empuje')
+    sim_params = ('parent.Flyer.par.Densidad', 'parent.Flyer.par.Empuje',
+                  'parent.Flyer.par.Subida')
     a = glsl_pass(comp, 'sim_a', SIM_A, 3, SIM, 0, 0, 'rgba32float', sim_params)
     b = glsl_pass(comp, 'sim_b', SIM_B, 1, SIM, 200, 0, 'rgba32float')
     c = glsl_pass(comp, 'sim_c', SIM_C, 2, SIM, 400, 0, 'rgba32float')
@@ -753,7 +817,8 @@ def build():
     wire(partido, capas, 2)
 
     term = glsl_pass(flyer, 'terminacion', TERMINACION, 2, RES, 900, 0, None,
-                     ('parent.Flyer.par.Grano',))
+                     ('parent.Flyer.par.Grano',
+                      "op('titulo/animacion').module.glitch(me.time.frame)"))
     wire(capas, term, 0)
     wire(sel_titulo, term, 1)
 
