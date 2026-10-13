@@ -161,20 +161,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     velocity += injectionNoise * 0.1;
     density += max((length(injectionNoise) * 0.04), 0.);
 
-    float influenceRadius = ballRadius * 2.;
-    for(int i = 0 ; i < nbSphere ; i++)
-    {
-        vec2 p = spherePosition(i, iFrame);
-        float dist = distance(uv, p);
-        if(dist < influenceRadius)
-        {
-            vec2 op = spherePosition(i, iFrame + 1);
-            vec2 ballVelocity = p - op;
-            density -= ((influenceRadius - dist) / influenceRadius) * 0.15;
-            density = max(0., density);
-         	velocity -= ballVelocity * 5.;
-        }
-    }
+    // (Se quitó la interacción de las bolas: dejaba huecos negros en el humo)
     density = min(1., density);
     density *= 0.99;
     veld = vec3(vec3(velocity, density));
@@ -287,12 +274,13 @@ float sampleFog(in vec3 pos)
     return texture(iChannel0, uv).z;
 }
 
-vec3 Render(in vec3 ro,in vec3 rd, float fudge)
+// Devuelve (luz recibida por el humo, opacidad del humo)
+vec2 Render(in vec3 ro,in vec3 rd, float fudge)
 {
     vec3 lightPos = getLightPos();
 	float t;
     if(!floorIntersect(ro, rd, fogHeigth, t))
-        return vec3(0);
+        return vec2(0);
 
     vec3 curPos = ro + rd * t;
     vec3 fogStep = (fogHeigth / float(nbSlice)) * rd / abs(rd.y);
@@ -330,13 +318,7 @@ vec3 Render(in vec3 ro,in vec3 rd, float fudge)
         }
         curPos+= fogStep;
     }
-    return vec3(lightEnergy) * (1. - transmittance);
-}
-
-vec3 vignette(vec3 color, vec2 q, float v)
-{
-    color *= 0.3 + 0.8 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), v);
-    return color;
+    return vec2(lightEnergy, 1. - transmittance);
 }
 
 mat3 setCamera( in vec3 ro, in vec3 ta )
@@ -357,9 +339,11 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     vec3 ta = vec3( 0 );
     mat3 ca = setCamera( ro, ta );
     vec3 rd =  ca*normalize(vec3(p,1.5));
-    vec3 tot = Render(ro ,rd, hash12(fragCoord + iTime));
-	tot = vignette(tot, fragCoord / iResolution.xy, 0.6);
-	fragColor = vec4( sqrt(tot), 1.0 );
+    vec2 fog = Render(ro ,rd, hash12(fragCoord + iTime));
+    // Alfa = opacidad del humo; color premultiplicado (como espera TD)
+    float alpha = clamp(fog.y, 0., 1.);
+    float light = min(sqrt(fog.x), 1.);
+	fragColor = vec4(vec3(light * alpha), alpha);
 }
 '''
 
