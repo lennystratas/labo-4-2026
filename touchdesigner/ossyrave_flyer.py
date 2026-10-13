@@ -336,57 +336,84 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 '''
 
 # ---------------------------------------------------------------------
-# composicion: arma el flyer
-#   iChannel0 foto original    iChannel1 recorte (premult)
-#   iChannel2 profundidad      iChannel3 humo (premult)
-#   iChannel4 título (premult)
+# Composición en tres pasos (cada GLSL TOP con 3 entradas como máximo)
+#
+# humo_partido: decide qué parte del humo queda detrás de la chica
+#   iChannel0 humo (premult)   iChannel1 profundidad   iChannel2 recorte
+#   Salida: x luz del humo, y opacidad, z fracción que va detrás
 # ---------------------------------------------------------------------
-COMPOSICION = r'''
-#define CORTE    uP.x   // altura hasta donde el humo pasa por delante de ella
-#define LIMPIEZA uP.y   // cuánto se borra el humo pintado en la foto
-#define GRANO    uP.z
+HUMO_PARTIDO = r'''
+#define CORTE uP.x   // altura hasta donde el humo pasa por delante de ella
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    vec2 uv = fragCoord / iResolution.xy;
+    vec4 humo = texture(iChannel0, uv);
+    float prof = texture(iChannel1, uv).r;                  // blanco = cerca
+    float chica = texture(iChannel2, uv).a * smoothstep(0.055, 0.14, uv.y);
+
+    // El humo bajo está cerca de cámara y el alto lejos, con algo de ruido
+    // para que se entrelace con ella.
+    float profHumo = mix(0.2, 0.95, smoothstep(CORTE, 0., uv.y))
+                   + (noise(vec3(uv * vec2(4., 7.), iTime * 0.15)) - 0.5) * 0.25;
+    float delante = smoothstep(-0.05, 0.05, profHumo - prof);
+    float atras = (1. - delante) * chica;
+    fragColor = vec4(humo.r, humo.a, atras, 1.);
+}
+'''
+
+# ---------------------------------------------------------------------
+# capas: foto limpia -> humo de atrás -> chica -> humo de adelante
+#   iChannel0 foto original   iChannel1 recorte (premult)   iChannel2 humo_partido
+# ---------------------------------------------------------------------
+CAPAS = r'''
+#define LIMPIEZA uP.x   // cuánto se borra el humo pintado en la foto
 const vec3 tonoHumo = vec3(1.0, 0.95, 0.86);   // sepia de la foto
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 uv = fragCoord / iResolution.xy;
 
-    // 1. Fondo: la foto original sin el humo pintado de la parte baja
+    // Fondo: la foto original sin el humo pintado de la parte baja
     vec3 foto = texture(iChannel0, uv).rgb;
     float lum = dot(foto, vec3(0.299, 0.587, 0.114));
     float zonaBaja = 1. - smoothstep(0.45, 0.66, uv.y);
     foto *= 1. - smoothstep(0.12, 0.45, lum) * zonaBaja * LIMPIEZA;
 
-    // 2. La chica, que se funde hacia los pies
-    vec4 chica = texture(iChannel1, uv);
-    chica *= smoothstep(0.055, 0.14, uv.y);
+    // La chica, que se funde hacia los pies
+    vec4 chica = texture(iChannel1, uv) * smoothstep(0.055, 0.14, uv.y);
 
-    // 3. Humo delante o detrás según el mapa de profundidad (blanco = cerca).
-    //    El humo bajo está cerca de cámara y el alto lejos, con algo de
-    //    ruido para que se entrelace con ella.
-    vec4 humo = texture(iChannel3, uv);
-    humo.rgb *= tonoHumo;
-    float prof = texture(iChannel2, uv).r;
-    float profHumo = mix(0.2, 0.95, smoothstep(CORTE, 0., uv.y))
-                   + (noise(vec3(uv * vec2(4., 7.), iTime * 0.15)) - 0.5) * 0.25;
-    float delante = smoothstep(-0.05, 0.05, profHumo - prof);
-    delante = mix(1., delante, chica.a);
-    vec4 humoAtras   = humo * (1. - delante);
-    vec4 humoDelante = humo * delante;
+    // Humo partido en dos capas
+    vec4 h = texture(iChannel2, uv);
+    vec4 humo = vec4(vec3(h.x) * tonoHumo, h.y);
+    vec4 humoAtras   = humo * h.z;
+    vec4 humoDelante = humo * (1. - h.z);
 
     vec3 col = foto;
     col = col * (1. - humoAtras.a)   + humoAtras.rgb;
     col = col * (1. - chica.a)       + chica.rgb;
     col = col * (1. - humoDelante.a) + humoDelante.rgb;
+    fragColor = vec4(col, 1.);
+}
+'''
 
-    // 4. Título
-    vec4 titulo = texture(iChannel4, uv);
+# ---------------------------------------------------------------------
+# terminacion: título encima, viñeta y grano
+#   iChannel0 capas   iChannel1 título (premult)
+# ---------------------------------------------------------------------
+TERMINACION = r'''
+#define GRANO uP.x
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    vec2 uv = fragCoord / iResolution.xy;
+    vec3 col = texture(iChannel0, uv).rgb;
+    vec4 titulo = texture(iChannel1, uv);
     col = col * (1. - titulo.a) + titulo.rgb;
 
-    // 5. Terminación: viñeta suave y grano (determinista: depende del frame)
     vec2 c = uv - 0.5;
     col *= 1. - 0.6 * dot(c, c);
-    col += (hash12(fragCoord + float(iFrame) * 17.31) - 0.5) * GRANO;
+    col += (hash12(fragCoord + float(iFrame) * 17.31) - 0.5) * GRANO;   // determinista
     fragColor = vec4(clamp(col, 0., 1.), 1.);
 }
 '''
@@ -713,21 +740,30 @@ def build():
     sel_titulo.par.top = 'titulo/out1'
     sel_titulo.nodeX, sel_titulo.nodeY = 300, -300
 
-    comp = glsl_pass(flyer, 'composicion', COMPOSICION, 5, RES, 500, 0, None,
-                     ('parent.Flyer.par.Corte', 'parent.Flyer.par.Limpieza',
-                      'parent.Flyer.par.Grano'))
-    for i, name in enumerate(('foto', 'recorte', 'profundidad')):
-        wire(flyer.op(name), comp, i)
-    wire(sel_humo, comp, 3)
-    wire(sel_titulo, comp, 4)
+    partido = glsl_pass(flyer, 'humo_partido', HUMO_PARTIDO, 3, RES, 500, -150,
+                        'rgba16float', ('parent.Flyer.par.Corte',))
+    wire(sel_humo, partido, 0)
+    wire(flyer.op('profundidad'), partido, 1)
+    wire(flyer.op('recorte'), partido, 2)
+
+    capas = glsl_pass(flyer, 'capas', CAPAS, 3, RES, 700, 0, None,
+                      ('parent.Flyer.par.Limpieza',))
+    wire(flyer.op('foto'), capas, 0)
+    wire(flyer.op('recorte'), capas, 1)
+    wire(partido, capas, 2)
+
+    term = glsl_pass(flyer, 'terminacion', TERMINACION, 2, RES, 900, 0, None,
+                     ('parent.Flyer.par.Grano',))
+    wire(capas, term, 0)
+    wire(sel_titulo, term, 1)
 
     final = flyer.create(nullTOP, 'final')
-    final.nodeX, final.nodeY = 700, 0
-    comp.outputConnectors[0].connect(final)
+    final.nodeX, final.nodeY = 1100, 0
+    term.outputConnectors[0].connect(final)
     final.viewer = True
 
     grabar = flyer.create(moviefileoutTOP, 'grabar')
-    grabar.nodeX, grabar.nodeY = 900, 0
+    grabar.nodeX, grabar.nodeY = 1300, 0
     grabar.par.file = 'ossyrave.mov'
     final.outputConnectors[0].connect(grabar)
 
