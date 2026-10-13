@@ -5,7 +5,7 @@
 #        https://www.shadertoy.com/view/WlVyRV   (CC BY-NC-SA 3.0)
 #
 #  Uso:
-#   1. Poné foto.jpg, recorte.png y profundidad.png al lado del .toe
+#   1. Poné foto.jpg, recorte.png, profundidad.png y logo.png al lado del .toe
 #      (o cambiá las rutas en los parámetros del COMP).
 #   2. Pegá ESTE ARCHIVO COMPLETO en un Text DAT -> click derecho ->
 #      Run Script. Se crea /project1/ossyrave y el timeline queda en
@@ -20,8 +20,7 @@
 #  siempre desde el frame 1 sin saltear frames (Exportar ya lo hace).
 # =====================================================================
 
-LINEAS = ('OSSY', 'RAVE')       # título en dos líneas
-TITULO = ''.join(LINEAS)
+TITULO = 'OSSYRAVE'
 FPS = 60
 DURACION = 12                 # segundos
 RES = (1116, 2000)            # resolución del flyer (la de las imágenes)
@@ -414,20 +413,38 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 '''
 
 # ---------------------------------------------------------------------
-# terminacion: título encima, viñeta y grano
-#   iChannel0 capas   iChannel1 título (premult)
+# terminacion: logo, título encima, viñeta y grano
+#   iChannel0 capas   iChannel1 título (premult)   iChannel2 logo
 # ---------------------------------------------------------------------
 TERMINACION = r'''
 #define GRANO  uP.x
 #define GLITCH uP.y    // separación RGB del título (la da animacion.glitch)
+uniform vec4 uLogo;    // x opacidad, y tamaño (fracción del ancho), z altura del centro
+const vec3 blanco = vec3(0.97, 0.96, 0.93);
+
+float logoAlfa(vec2 uv)
+{
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = vec2((uv.x - 0.5) / uLogo.y, (uv.y - uLogo.z) / (uLogo.y * aspect)) + 0.5;
+    if (any(lessThan(p, vec2(0.))) || any(greaterThan(p, vec2(1.))))
+        return 0.;
+    return clamp(texture(iChannel2, p).a * 2.2, 0., 1.) * uLogo.x;   // el trazo es tenue
+}
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 uv = fragCoord / iResolution.xy;
     vec3 col = texture(iChannel0, uv).rgb;
+    vec2 d = vec2((1.5 + 16. * GLITCH) / iResolution.x, 0.);
+
+    // Logo (detrás del título): se separa en canales solo en los glitches,
+    // porque su trazo es fino
+    vec2 dl = vec2(16. * GLITCH / iResolution.x, 0.);
+    vec3 lc = vec3(logoAlfa(uv + dl), logoAlfa(uv), logoAlfa(uv - dl));
+    float la = max(lc.g, max(lc.r, lc.b));
+    col = col * (1. - la) + lc * blanco;
 
     // Título con separación de canales (rojo a un lado, azul al otro)
-    vec2 d = vec2((1.5 + 16. * GLITCH) / iResolution.x, 0.);
     vec4 tR = texture(iChannel1, uv + d);
     vec4 tG = texture(iChannel1, uv);
     vec4 tB = texture(iChannel1, uv - d);
@@ -445,7 +462,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 #  Animación del título (va a ossyrave/titulo/animacion)
 # =====================================================================
 
-ANIMACION = '''# Animación del título.
+ANIMACION = '''# Animación del logo y del título.
 # Todo depende solo del frame -> cada reproducción es idéntica.
 # Las letras empujan el humo solas: cualquier movimiento que hagas acá
 # (o con keyframes en los Transform TOP mov1..mov8) se transmite al humo.
@@ -454,18 +471,23 @@ ANIMACION = '''# Animación del título.
 #            escala_x, escala_y -> 1 = tamaño normal    rot -> grados
 #            opacidad -> 0..1
 
-import math
-
 FPS = %(fps)d
-LINEAS = %(lineas)r
-ESTIRAR = 1.35              # letras extendidas: ancho / alto
-ANCHO = 0.205               # distancia entre letras (fracción del ancho)
-Y_LINEAS = (0.37, 0.265)    # altura de cada línea
-ENTRADA = (1.0, 1.6)        # segundo en que empieza a entrar cada línea
-LADO = (-1, 1)              # OSSY entra por la izquierda, RAVE por la derecha
+TEXTO = %(texto)r
+
+# --- Logo: aparece primero, arriba al centro ---
+LOGO_TAMANO = 0.36          # fracción del ancho
+LOGO_ENTRADA = 0.4          # segundo en que empieza a aparecer
+LOGO_FUNDIDO = 1.2          # segundos de fundido
+
+# --- Título: una línea, encima del logo ---
+Y = 0.32                    # altura (0 = centro, 0.5 = borde de arriba)
+ESTIRAR = 1.2               # letras extendidas: ancho / alto
+ANCHO = 0.116               # distancia entre letras (fracción del ancho)
+ENTRADA = 2.0               # segundo en que empiezan a entrar las letras
 DESFASE = 0.10              # segundos entre letras
 VIAJE = 2.0                 # segundos que tarda cada letra en entrar
 DESTELLO = 0.3              # segundos de parpadeo al llegar
+GOLPES = (6.5, 9.2)         # golpes cortos de glitch
 
 
 def _suave(x):
@@ -473,59 +495,63 @@ def _suave(x):
     return x * x * (3. - 2. * x)
 
 
-def _ubicar(i):
-    for linea, texto in enumerate(LINEAS):
-        if i < len(texto):
-            return linea, i
-        i -= len(texto)
-
-
 def _estado(i, t):
-    linea, col = _ubicar(i)
-    n = len(LINEAS[linea])
-    lado = LADO[linea]
+    n = len(TEXTO)
+    mitad = n // 2
+    lado = -1 if i < mitad else 1          # la primera mitad entra por la izquierda
     # entra primero la letra que tiene más camino por delante
-    orden = (n - 1 - col) if lado < 0 else col
-    inicio = ENTRADA[linea] + orden * DESFASE
+    orden = (mitad - 1 - i) if lado < 0 else (i - mitad)
+    inicio = ENTRADA + orden * DESFASE
     u = (t - inicio) / VIAJE
     k = _suave(u)
-    x_final = (col - (n - 1) / 2.) * ANCHO
-    x_inicio = lado * 0.75                 # justo afuera de la pantalla
+    x_final = (i - (n - 1) / 2.) * ANCHO
+    x_inicio = lado * 0.62                 # justo afuera de la pantalla
     x = x_inicio + (x_final - x_inicio) * k
-    # velocidad relativa (0..1) para estirar la letra y el glitch
-    vel = 0.
+    vel = 0.                               # velocidad relativa (0..1)
     if 0. < u < 1.:
         vel = min(abs(x_final - x_inicio) * 6. * u * (1. - u) / VIAJE / 0.9, 1.)
-    return linea, x, u, vel
+    return x, u, vel
 
 
 def letra(i, frame):
     t = (frame - 1) / FPS
-    linea, x, u, vel = _estado(i, t)
+    x, u, vel = _estado(i, t)
     llegada = (u - 1.) * VIAJE                # segundos desde que llegó
     opacidad = 1. if u > 0. else 0.
     if 0. <= llegada < DESTELLO:              # estroboscópico al llegar
         opacidad = 1. if (frame // 3) %% 2 == 0 else 0.25
     return {'x': x,
-            'y': Y_LINEAS[linea],
+            'y': Y,
             'escala_x': ESTIRAR * (1. + 0.5 * vel),   # se estira con la velocidad
             'escala_y': 1. - 0.15 * vel,
             'rot': 0.,
             'opacidad': opacidad}
 
 
+def logo(frame):
+    t = (frame - 1) / FPS
+    u = (t - LOGO_ENTRADA) / LOGO_FUNDIDO
+    k = _suave(u)
+    opacidad = k
+    if 0. <= u < 0.4:                         # parpadea al aparecer
+        opacidad *= 1. if (frame // 3) %% 2 == 0 else 0.3
+    return {'opacidad': opacidad,
+            'tamano': LOGO_TAMANO * (0.92 + 0.08 * k),
+            'y': 0.5 + Y}                     # centrado detrás del título
+
+
 def glitch(frame):
-    # 0..1: separación RGB del título. Sube cuando las letras se mueven
-    # y en dos golpes cortos más adelante.
+    # 0..1: separación RGB del título y el logo. Sube cuando las letras
+    # se mueven y en los golpes.
     t = (frame - 1) / FPS
     g = 0.
-    for i in range(sum(len(l) for l in LINEAS)):
-        g = max(g, _estado(i, t)[3])
-    for golpe in (6.5, 9.2):
+    for i in range(len(TEXTO)):
+        g = max(g, _estado(i, t)[2])
+    for golpe in GOLPES:
         if 0. <= t - golpe < 0.25:
             g = max(g, 0.8 if (frame // 2) %% 2 == 0 else 0.2)
     return g
-''' % {'fps': FPS, 'lineas': LINEAS}
+''' % {'fps': FPS, 'texto': TITULO}
 
 # =====================================================================
 #  Construcción de la red (solo corre dentro de TouchDesigner)
@@ -572,7 +598,8 @@ def glsl_source(code, n_channels):
     return HEADER + defines + COMMON + code + FOOTER
 
 
-def glsl_pass(comp, name, code, n_channels, res, x, y, fmt=None, params=()):
+def glsl_pass(comp, name, code, n_channels, res, x, y, fmt=None, params=(),
+              extra=None):
     dat = comp.create(textDAT, name + '_glsl')
     dat.text = glsl_source(code, n_channels)
     dat.nodeX, dat.nodeY = x, y + 160
@@ -591,6 +618,10 @@ def glsl_pass(comp, name, code, n_channels, res, x, y, fmt=None, params=()):
     top.par.vec1name = 'uP'
     for comp_name, expr in zip('xyzw', params):
         getattr(top.par, 'vec1value' + comp_name).expr = expr
+    if extra:                       # (nombre, expresiones) -> vec2
+        top.par.vec2name = extra[0]
+        for comp_name, expr in zip('xyzw', extra[1]):
+            getattr(top.par, 'vec2value' + comp_name).expr = expr
     return top
 
 
@@ -640,7 +671,8 @@ def add_custom_pars(comp):
 
     for name, label, file in (('Foto', 'Foto original', 'foto.jpg'),
                               ('Recorte', 'Recorte (alfa)', 'recorte.png'),
-                              ('Profundidad', 'Profundidad', 'profundidad.png')):
+                              ('Profundidad', 'Profundidad', 'profundidad.png'),
+                              ('Logo', 'Logo', 'logo.png')):
         p = page.appendFile(name, label=label)[0]
         p.val = file          # relativa a la carpeta del .toe
     fpar('Densidad', 'Densidad del humo', 1.0, 0, 3)
@@ -652,7 +684,7 @@ def add_custom_pars(comp):
     fpar('Grano', 'Grano', 0.04, 0, 0.2)
     p = page.appendStr('Fuente', label='Fuente')[0]
     p.val = 'Arial Black'
-    fpar('Tamano', 'Tamaño de letra', 220, 40, 500)
+    fpar('Tamano', 'Tamaño de letra', 125, 40, 500)
     page.appendPulse('Exportar', label='Exportar 12 s')
 
 
@@ -790,7 +822,7 @@ def build():
 
     # Entradas
     for i, (name, par) in enumerate((('foto', 'Foto'), ('recorte', 'Recorte'),
-                                     ('profundidad', 'Profundidad'))):
+                                     ('profundidad', 'Profundidad'), ('logo', 'Logo'))):
         m = flyer.create(moviefileinTOP, name)
         m.par.file.expr = 'parent.Flyer.par.%s' % par
         m.nodeX, m.nodeY = 0, 300 - i * 150
@@ -818,11 +850,14 @@ def build():
     wire(flyer.op('recorte'), capas, 1)
     wire(partido, capas, 2)
 
-    term = glsl_pass(flyer, 'terminacion', TERMINACION, 2, RES, 900, 0, None,
+    logo = "op('titulo/animacion').module.logo(me.time.frame)['%s']"
+    term = glsl_pass(flyer, 'terminacion', TERMINACION, 3, RES, 900, 0, None,
                      ('parent.Flyer.par.Grano',
-                      "op('titulo/animacion').module.glitch(me.time.frame)"))
+                      "op('titulo/animacion').module.glitch(me.time.frame)"),
+                     ('uLogo', (logo % 'opacidad', logo % 'tamano', logo % 'y')))
     wire(capas, term, 0)
     wire(sel_titulo, term, 1)
+    wire(flyer.op('logo'), term, 2)
 
     final = flyer.create(nullTOP, 'final')
     final.nodeX, final.nodeY = 1100, 0
