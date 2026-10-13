@@ -152,7 +152,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     // El humo nace sobre el piso y sube en columnas que se desplazan
     float piso = 1. - smoothstep(0.02, 0.30, q.y);
     float columnas = 0.4 + 0.6 * smoothstep(0.3, 0.7, noise(vec3(uv.x * 3.5 + iTime * 0.15, uv.y * 0.8, iTime * 0.2)));
-    velocity.y += 0.096 * SUBIDA * density * columnas;
+    velocity.y += 0.12 * SUBIDA * density * columnas;
     velocity *= 0.995;
 
     // Perturbación fina
@@ -180,7 +180,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     density *= 1. - m;
 
     density = min(1., density);
-    density *= 0.997 - 0.008 * q.y;                    // se afina a medida que sube
+    density *= 0.997 - 0.010 * q.y;                    // se afina a medida que sube
     density *= 1. - 0.04 * smoothstep(0.8, 1.0, q.y);  // y no se acumula contra el borde
     veld = vignette(vec3(velocity, density), q, 1.);
     fragColor = vec4(veld, m);
@@ -413,44 +413,40 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 '''
 
 # ---------------------------------------------------------------------
-# terminacion: logo, título encima, viñeta y grano
-#   iChannel0 capas   iChannel1 título (premult)   iChannel2 logo
+# fondo: agrega el logo sobre las capas
+#   iChannel0 capas   iChannel1 logo
 # ---------------------------------------------------------------------
-TERMINACION = r'''
-#define GRANO  uP.x
-#define GLITCH uP.y    // separación RGB del título (la da animacion.glitch)
+FONDO = r'''
 uniform vec4 uLogo;    // x opacidad, y tamaño (fracción del ancho), z altura del centro
 const vec3 blanco = vec3(0.97, 0.96, 0.93);
-
-float logoAlfa(vec2 uv)
-{
-    float aspect = iResolution.x / iResolution.y;
-    vec2 p = vec2((uv.x - 0.5) / uLogo.y, (uv.y - uLogo.z) / (uLogo.y * aspect)) + 0.5;
-    if (any(lessThan(p, vec2(0.))) || any(greaterThan(p, vec2(1.))))
-        return 0.;
-    return clamp(texture(iChannel2, p).a * 2.2, 0., 1.) * uLogo.x;   // el trazo es tenue
-}
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 uv = fragCoord / iResolution.xy;
     vec3 col = texture(iChannel0, uv).rgb;
-    vec2 d = vec2((1.5 + 16. * GLITCH) / iResolution.x, 0.);
 
-    // Logo (detrás del título): se separa en canales solo en los glitches,
-    // porque su trazo es fino
-    vec2 dl = vec2(16. * GLITCH / iResolution.x, 0.);
-    vec3 lc = vec3(logoAlfa(uv + dl), logoAlfa(uv), logoAlfa(uv - dl));
-    float la = max(lc.g, max(lc.r, lc.b));
-    col = col * (1. - la) + lc * blanco;
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = vec2((uv.x - 0.5) / uLogo.y, (uv.y - uLogo.z) / (uLogo.y * aspect)) + 0.5;
+    if (all(greaterThanEqual(p, vec2(0.))) && all(lessThanEqual(p, vec2(1.))))
+    {
+        float a = clamp(texture(iChannel1, p).a * 2.2, 0., 1.) * uLogo.x;   // el trazo es tenue
+        col = col * (1. - a) + blanco * a;
+    }
+    fragColor = vec4(col, 1.);
+}
+'''
 
-    // Título con separación de canales (rojo a un lado, azul al otro)
-    vec4 tR = texture(iChannel1, uv + d);
-    vec4 tG = texture(iChannel1, uv);
-    vec4 tB = texture(iChannel1, uv - d);
-    float ta = max(tG.a, max(tR.a, tB.a));
-    col = col * (1. - ta) + vec3(tR.r, tG.g, tB.b);
+# ---------------------------------------------------------------------
+# terminacion: viñeta y grano (después del contraste del título)
+#   iChannel0 contraste
+# ---------------------------------------------------------------------
+TERMINACION = r'''
+#define GRANO uP.x
 
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    vec2 uv = fragCoord / iResolution.xy;
+    vec3 col = texture(iChannel0, uv).rgb;
     vec2 c = uv - 0.5;
     col *= 1. - 0.6 * dot(c, c);
     col += (hash12(fragCoord + float(iFrame) * 17.31) - 0.5) * GRANO;   // determinista
@@ -487,7 +483,6 @@ ENTRADA = 2.0               # segundo en que empiezan a entrar las letras
 DESFASE = 0.10              # segundos entre letras
 VIAJE = 2.0                 # segundos que tarda cada letra en entrar
 DESTELLO = 0.3              # segundos de parpadeo al llegar
-GOLPES = (6.5, 9.2)         # golpes cortos de glitch
 
 
 def _suave(x):
@@ -507,7 +502,7 @@ def _estado(i, t):
     x_final = (i - (n - 1) / 2.) * ANCHO
     x_inicio = lado * 0.62                 # justo afuera de la pantalla
     x = x_inicio + (x_final - x_inicio) * k
-    vel = 0.                               # velocidad relativa (0..1)
+    vel = 0.                               # velocidad relativa (0..1) para estirar
     if 0. < u < 1.:
         vel = min(abs(x_final - x_inicio) * 6. * u * (1. - u) / VIAJE / 0.9, 1.)
     return x, u, vel
@@ -540,17 +535,6 @@ def logo(frame):
             'y': 0.5 + Y}                     # centrado detrás del título
 
 
-def glitch(frame):
-    # 0..1: separación RGB del título y el logo. Sube cuando las letras
-    # se mueven y en los golpes.
-    t = (frame - 1) / FPS
-    g = 0.
-    for i in range(len(TEXTO)):
-        g = max(g, _estado(i, t)[2])
-    for golpe in GOLPES:
-        if 0. <= t - golpe < 0.25:
-            g = max(g, 0.8 if (frame // 2) %% 2 == 0 else 0.2)
-    return g
 ''' % {'fps': FPS, 'texto': TITULO}
 
 # =====================================================================
@@ -707,7 +691,7 @@ def build_titulo(flyer):
         txt.par.text = ch
         txt.par.font.expr = 'parent.Flyer.par.Fuente'
         txt.par.fontsizex.expr = 'parent.Flyer.par.Tamano'
-        txt.par.fontcolorr, txt.par.fontcolorg, txt.par.fontcolorb = 0.97, 0.96, 0.93
+        txt.par.fontcolorr, txt.par.fontcolorg, txt.par.fontcolorb = 1, 1, 1   # blanco puro: Difference invierte el fondo
         txt.par.fontalpha.expr = get % 'opacidad'
         txt.par.bgalpha = 0
         mov = comp.create(transformTOP, 'mov%d' % (i + 1))
@@ -851,21 +835,30 @@ def build():
     wire(partido, capas, 2)
 
     logo = "op('titulo/animacion').module.logo(me.time.frame)['%s']"
-    term = glsl_pass(flyer, 'terminacion', TERMINACION, 3, RES, 900, 0, None,
-                     ('parent.Flyer.par.Grano',
-                      "op('titulo/animacion').module.glitch(me.time.frame)"),
-                     ('uLogo', (logo % 'opacidad', logo % 'tamano', logo % 'y')))
-    wire(capas, term, 0)
-    wire(sel_titulo, term, 1)
-    wire(flyer.op('logo'), term, 2)
+    fondo = glsl_pass(flyer, 'fondo', FONDO, 2, RES, 900, 0, None, (),
+                      ('uLogo', (logo % 'opacidad', logo % 'tamano', logo % 'y')))
+    wire(capas, fondo, 0)
+    wire(flyer.op('logo'), fondo, 1)
+
+    # Contraste: el título (blanco) en modo Difference -> sobre negro queda
+    # blanco y sobre el humo blanco queda negro
+    contraste = flyer.create(compositeTOP, 'contraste')
+    contraste.par.operand = 'difference'
+    contraste.nodeX, contraste.nodeY = 1100, 0
+    wire(fondo, contraste, 0)
+    wire(sel_titulo, contraste, 1)
+
+    term = glsl_pass(flyer, 'terminacion', TERMINACION, 1, RES, 1300, 0, None,
+                     ('parent.Flyer.par.Grano',))
+    wire(contraste, term, 0)
 
     final = flyer.create(nullTOP, 'final')
-    final.nodeX, final.nodeY = 1100, 0
+    final.nodeX, final.nodeY = 1500, 0
     term.outputConnectors[0].connect(final)
     final.viewer = True
 
     grabar = flyer.create(moviefileoutTOP, 'grabar')
-    grabar.nodeX, grabar.nodeY = 1300, 0
+    grabar.nodeX, grabar.nodeY = 1700, 0
     grabar.par.file = 'ossyrave.mov'
     final.outputConnectors[0].connect(grabar)
 
