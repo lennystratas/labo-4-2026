@@ -511,8 +511,29 @@ def feedback(comp, name, target, src, x, y):
     return fb
 
 
+_EXPECTED = []   # (nodo, índice, fuente) para verificar al final
+
+
 def wire(src, dst, i):
-    src.outputConnectors[0].connect(dst.inputConnectors[i])
+    # TouchDesigner a veces no crea el próximo conector libre hasta más
+    # tarde; en ese caso conectamos a la siguiente entrada libre (siempre
+    # cableamos en orden, así que el índice coincide).
+    try:
+        src.outputConnectors[0].connect(dst.inputConnectors[i])
+    except IndexError:
+        src.outputConnectors[0].connect(dst)
+    _EXPECTED.append((dst, i, src))
+
+
+def check_wiring():
+    ok = True
+    for dst, i, src in _EXPECTED:
+        ins = dst.inputs
+        if i >= len(ins) or ins[i] is None or ins[i].path != src.path:
+            ok = False
+            print('ATENCION: %s entrada %d deberia ser %s, es %s'
+                  % (dst.path, i, src.name, ins[i].name if i < len(ins) and ins[i] else None))
+    return ok
 
 
 def add_custom_pars(comp):
@@ -713,7 +734,8 @@ def build():
     ex.par.frameend = True
     ex.nodeX, ex.nodeY = 1100, -250
 
-    print('Flyer creado en', flyer.path)
+    if check_wiring():
+        print('Flyer creado en', flyer.path)
 
 
 try:
