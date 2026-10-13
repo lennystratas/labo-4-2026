@@ -150,9 +150,10 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     }
     density = max(density, colchon);
 
-    // El humo nace sobre el piso y flota hacia arriba
+    // El humo nace sobre el piso y sube en columnas que se desplazan
     float piso = 1. - smoothstep(0.02, 0.30, q.y);
-    velocity.y += 0.04 * SUBIDA * density;
+    float columnas = 0.4 + 0.6 * smoothstep(0.3, 0.7, noise(vec3(uv.x * 3.5 + iTime * 0.15, uv.y * 0.8, iTime * 0.2)));
+    velocity.y += 0.096 * SUBIDA * density * columnas;
     velocity *= 0.995;
 
     // Perturbación fina
@@ -180,7 +181,8 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     density *= 1. - m;
 
     density = min(1., density);
-    density *= 0.996;      // se disipa lento: llega hasta arriba
+    density *= 0.997 - 0.008 * q.y;                    // se afina a medida que sube
+    density *= 1. - 0.04 * smoothstep(0.8, 1.0, q.y);  // y no se acumula contra el borde
     veld = vignette(vec3(velocity, density), q, 1.);
     fragColor = vec4(veld, m);
 }
